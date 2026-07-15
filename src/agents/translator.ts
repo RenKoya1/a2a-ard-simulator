@@ -53,8 +53,13 @@ function translate(raw: string): string {
 
 export const translatorAgent: AgentDefinition = {
   name: 'Translator Agent',
+  slug: 'translator',
   description: '簡易辞書ベースの日英/英日翻訳エージェント(モック)',
   port: PORTS.translator,
+  discoveryQueries: [
+    'translate text between japanese and english',
+    'translate hello world to japanese',
+  ],
   skills: [
     {
       id: 'translate',

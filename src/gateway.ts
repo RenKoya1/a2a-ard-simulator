@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { v4 as uuidv4 } from 'uuid';
 import { ClientFactory, type Client } from '@a2a-js/sdk/client';
 import { PORTS, agentUrl } from './config.js';
+import { registryApiUrl } from './ard/registry.js';
 import { traceBus, type TraceEvent } from './trace.js';
 import { partsText } from './agents/base.js';
 import type { AgentDefinition } from './agents/base.js';
@@ -37,6 +38,51 @@ export function startGateway(agents: AgentDefinition[]): Promise<void> {
       })
     );
     res.json(cards);
+  });
+
+  // ARD registry control plane, proxied for the UI.
+  const registry = registryApiUrl().replace(/\/api\/v1$/, '');
+  app.get('/api/ard/entries', async (_req, res) => {
+    try {
+      res.json(await (await fetch(`${registry}/api/v1/agents`)).json());
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+  app.post('/api/ard/search', async (req, res) => {
+    try {
+      const upstream = await fetch(`${registry}/api/v1/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: { text: String(req.body?.text ?? '') }, pageSize: 5 }),
+      });
+      res.json(await upstream.json());
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+  app.post('/api/ard/toggle', async (req, res) => {
+    try {
+      const upstream = await fetch(`${registry}/admin/entries/enabled`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: String(req.body?.identifier ?? ''),
+          enabled: Boolean(req.body?.enabled),
+        }),
+      });
+      res.status(upstream.status).json(await upstream.json());
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+  app.post('/api/ard/crawl', async (_req, res) => {
+    try {
+      const upstream = await fetch(`${registry}/admin/crawl`, { method: 'POST' });
+      res.json(await upstream.json());
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+    }
   });
 
   // Live protocol trace via SSE (replays recent history on connect).

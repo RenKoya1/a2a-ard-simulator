@@ -55,8 +55,13 @@ function forecast(raw: string): string {
 
 export const weatherAgent: AgentDefinition = {
   name: 'Weather Agent',
+  slug: 'weather',
   description: '都市名から模擬天気予報を返すエージェント(決定的な擬似乱数)',
   port: PORTS.weather,
+  discoveryQueries: [
+    'weather forecast temperature for a city',
+    'get today weather humidity in tokyo',
+  ],
   skills: [
     {
       id: 'forecast',

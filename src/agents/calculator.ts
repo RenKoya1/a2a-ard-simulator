@@ -20,8 +20,13 @@ function calculate(raw: string): string {
 
 export const calculatorAgent: AgentDefinition = {
   name: 'Calculator Agent',
+  slug: 'calculator',
   description: '四則演算の式を評価する計算エージェント',
   port: PORTS.calculator,
+  discoveryQueries: [
+    'evaluate arithmetic expression calculator math',
+    'calculate a math formula with parentheses',
+  ],
   skills: [
     {
       id: 'calculate',

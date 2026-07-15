@@ -19,6 +19,8 @@
     --c-artifact: #34d399;
     --c-response: #4ade80;
     --c-discovery: #a78bfa;
+    --c-ard: #fb923c;
+    --c-verify: #e879f9;
     --c-error: #f87171;
   }
   * { box-sizing: border-box; }
@@ -70,6 +72,43 @@
     font-size: 10px; padding: 2px 7px; border-radius: 20px;
     background: rgba(34,211,238,.12); color: var(--accent); border: 1px solid rgba(34,211,238,.25);
   }
+
+  /* ---- ard panel ---- */
+  #agent-list { flex: 1; }
+  #ard-panel { padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 46%; }
+  .ard-entry {
+    display: flex; align-items: center; gap: 8px; font-size: 12px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; background: var(--panel2);
+  }
+  .ard-entry.off { opacity: .5; }
+  .ard-entry .urn { color: var(--muted); font-size: 10px; display: block; }
+  .ard-entry .info { flex: 1; min-width: 0; }
+  .ard-entry .info .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .switch { position: relative; width: 34px; height: 18px; flex: none; cursor: pointer; }
+  .switch input { display: none; }
+  .switch span {
+    position: absolute; inset: 0; border-radius: 20px; background: var(--border); transition: background .2s;
+  }
+  .switch span::after {
+    content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--muted); top: 2px; left: 2px; transition: transform .2s, background .2s;
+  }
+  .switch input:checked + span { background: rgba(251,146,60,.35); }
+  .switch input:checked + span::after { transform: translateX(16px); background: var(--c-ard); }
+  #ard-search { display: flex; gap: 6px; }
+  #ard-search input {
+    flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 6px 9px; font-size: 12px; outline: none;
+  }
+  #ard-search input:focus { border-color: var(--c-ard); }
+  #ard-search button {
+    background: rgba(251,146,60,.15); color: var(--c-ard); border: 1px solid rgba(251,146,60,.4);
+    border-radius: 6px; padding: 0 12px; cursor: pointer; font-size: 12px;
+  }
+  #ard-results { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+  #ard-results .hit { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; border-left: 2px solid var(--c-ard); background: var(--panel2); border-radius: 4px; }
+  #ard-results .hit b { color: var(--text); font-weight: 600; }
+  #ard-results .score { color: var(--c-ard); font-weight: 700; }
 
   /* ---- network ---- */
   #network { grid-area: network; }
@@ -143,7 +182,7 @@
 <body>
 <header>
   <h1>🤖 A2A Protocol Simulator</h1>
-  <span class="sub">Agent2Agent プロトコル (v0.3 / JSON-RPC) マルチエージェント・シミュレーション</span>
+  <span class="sub">A2A (v0.3 / JSON-RPC) + ARD (Agentic Resource Discovery) シミュレーション</span>
   <span id="conn"><span class="dot" id="conn-dot"></span><span id="conn-label">接続中...</span></span>
 </header>
 
@@ -151,6 +190,15 @@
   <section class="panel" id="agents">
     <h2>エージェント <span id="log-actions" style="margin-left:auto"><button id="refresh-agents">更新</button></span></h2>
     <div id="agent-list"></div>
+    <h2>📇 ARD Registry <span id="log-actions" style="margin-left:auto"><button id="crawl">再クロール</button></span></h2>
+    <div id="ard-panel">
+      <div id="ard-entries"></div>
+      <div id="ard-search">
+        <input id="ard-query" placeholder="capability を検索 (例: weather)" autocomplete="off" />
+        <button id="ard-go">検索</button>
+      </div>
+      <div id="ard-results"></div>
+    </div>
   </section>
 
   <section class="panel" id="network">
@@ -184,6 +232,8 @@
 
 <script>
 const TYPE_META = {
+  ard:       { label: 'ARD',       color: 'var(--c-ard)' },
+  verify:    { label: 'VERIFY',    color: 'var(--c-verify)' },
   discovery: { label: 'DISCOVERY', color: 'var(--c-discovery)' },
   request:   { label: 'REQUEST',   color: 'var(--c-request)' },
   task:      { label: 'TASK',      color: 'var(--c-task)' },
@@ -193,14 +243,20 @@ const TYPE_META = {
   error:     { label: 'ERROR',     color: 'var(--c-error)' },
 };
 const NODES = [
-  { id: 'User',               label: '👤 User',        role: 'ブラウザ UI',        x: 90,  y: 117 },
-  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A ルーター',       x: 440, y: 117 },
+  { id: 'User',               label: '👤 User',        role: 'ブラウザ UI',        x: 90,  y: 150 },
+  { id: 'ARD Registry',       label: '📇 ARD Registry', role: 'discovery 層',       x: 400, y: 45 },
+  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A ルーター',       x: 400, y: 150 },
   { id: 'Translator Agent',   label: '🌐 Translator',   role: '翻訳エージェント',   x: 780, y: 45 },
-  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: '計算エージェント',   x: 780, y: 117 },
-  { id: 'Weather Agent',      label: '⛅ Weather',      role: '天気エージェント',   x: 780, y: 190 },
+  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: '計算エージェント',   x: 780, y: 130 },
+  { id: 'Weather Agent',      label: '⛅ Weather',      role: '天気エージェント',   x: 780, y: 205 },
 ];
 const EDGES = [
   ['User', 'Orchestrator Agent'],
+  ['User', 'ARD Registry'],
+  ['Orchestrator Agent', 'ARD Registry'],
+  ['ARD Registry', 'Translator Agent'],
+  ['ARD Registry', 'Calculator Agent'],
+  ['ARD Registry', 'Weather Agent'],
   ['Orchestrator Agent', 'Translator Agent'],
   ['Orchestrator Agent', 'Calculator Agent'],
   ['Orchestrator Agent', 'Weather Agent'],
@@ -371,6 +427,54 @@ async function send(text) {
   }
 }
 
+/* ---------- ARD registry panel ---------- */
+async function loadArd() {
+  const wrap = $('#ard-entries');
+  try {
+    const { agents } = await (await fetch('/api/ard/entries')).json();
+    wrap.innerHTML = '';
+    for (const e of agents) {
+      const row = document.createElement('div');
+      row.className = `ard-entry${e.enabled ? '' : ' off'}`;
+      row.innerHTML = `
+        <div class="info">
+          <div class="nm">${esc(e.displayName)}</div>
+          <span class="urn">${esc(e.identifier)}</span>
+        </div>
+        <label class="switch"><input type="checkbox" ${e.enabled ? 'checked' : ''}><span></span></label>`;
+      row.querySelector('input').onchange = async (ev) => {
+        await fetch('/api/ard/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: e.identifier, enabled: ev.target.checked }),
+        });
+        loadArd();
+      };
+      wrap.appendChild(row);
+    }
+  } catch {
+    wrap.innerHTML = '<div class="ard-entry">Registry に接続できません</div>';
+  }
+}
+async function ardSearch() {
+  const text = $('#ard-query').value.trim();
+  if (!text) return;
+  const box = $('#ard-results');
+  box.innerHTML = '検索中...';
+  try {
+    const { results } = await (await fetch('/api/ard/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })).json();
+    box.innerHTML = results.length
+      ? results.map((r) => `<div class="hit"><b>${esc(r.displayName)}</b><span class="score">score ${r.score}</span></div>`).join('')
+      : '<div class="hit">該当なし</div>';
+  } catch {
+    box.innerHTML = '<div class="hit">検索エラー</div>';
+  }
+}
+
 /* ---------- SSE ---------- */
 function connectEvents() {
   const es = new EventSource('/api/events');
@@ -400,7 +504,11 @@ $('#send').onclick = () => send($('#input').value);
 $('#input').addEventListener('keydown', (e) => { if (e.key === 'Enter') send($('#input').value); });
 $('#refresh-agents').onclick = loadAgents;
 $('#clear-log').onclick = () => ($('#log-list').innerHTML = '');
-addMessage('agent', 'A2A シミュレーターへようこそ。下のシナリオボタンを押すか、メッセージを入力してください。\n「翻訳」「計算」「天気」を組み合わせると、Orchestrator が複数エージェントへ並列に A2A 委譲します。');
+loadArd();
+$('#crawl').onclick = async () => { await fetch('/api/ard/crawl', { method: 'POST' }); loadArd(); };
+$('#ard-go').onclick = ardSearch;
+$('#ard-query').addEventListener('keydown', (e) => { if (e.key === 'Enter') ardSearch(); });
+addMessage('agent', 'A2A + ARD シミュレーターへようこそ。\nOrchestrator はエージェントを直接知りません — 依頼ごとに ARD Registry で検索(discovery)し、trustManifest を検証してから A2A で接続します。\n左下の ARD Registry パネルでエージェントの登録を OFF にすると、そのエージェントは「発見できなく」なります。試してみてください。');
 </script>
 </body>
 </html>

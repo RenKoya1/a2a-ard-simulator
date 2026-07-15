@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 
 export type TraceType =
+  | 'ard' // ARD registry: catalog crawl / search
+  | 'verify' // ARD trust manifest verification
   | 'discovery' // agent card fetch
   | 'request' // message/send arriving at an agent
   | 'task' // task created

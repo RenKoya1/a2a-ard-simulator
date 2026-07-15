@@ -12,6 +12,7 @@ import {
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/server/express';
 import { traceBus } from '../trace.js';
 import { agentUrl } from '../config.js';
+import { AI_CATALOG_PATH, buildCatalog } from '../ard/catalog.js';
 
 export const partsText = (parts: Message['parts'] | undefined): string =>
   (parts ?? [])
@@ -208,9 +209,13 @@ export function makeWorkerExecutor(opts: {
 
 export interface AgentDefinition {
   name: string;
+  /** Stable slug used in the ARD identifier URN (urn:air:sim.local:agents:<slug>). */
+  slug: string;
   description: string;
   port: number;
   skills: AgentCard['skills'];
+  /** representativeQueries published in the ARD catalog entry — what this agent is "for". */
+  discoveryQueries: string[];
   executor: AgentExecutor;
 }
 
@@ -242,6 +247,8 @@ export function startAgentServer(def: AgentDefinition): Promise<void> {
   const app = express();
   app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: requestHandler }));
   app.use('/a2a/jsonrpc', jsonRpcHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }));
+  // ARD: publish this host's capability catalog for registry crawlers.
+  app.get(`/${AI_CATALOG_PATH}`, (_req, res) => res.json(buildCatalog(def)));
 
   return new Promise((resolve, reject) => {
     const server = app.listen(def.port, () => {
