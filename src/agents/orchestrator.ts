@@ -9,7 +9,7 @@ import { PORTS } from '../config.js';
 import { traceBus } from '../trace.js';
 import { A2A_CARD_MEDIA_TYPE, entryIdentifier, type CatalogEntry } from '../ard/catalog.js';
 import { registryApiUrl } from '../ard/registry.js';
-import { agentMessage, partsText, sleep, textOf, type AgentDefinition } from './base.js';
+import { agentMessage, partsText, textOf, type AgentDefinition } from './base.js';
 
 const ORCHESTRATOR = 'Orchestrator Agent';
 const REGISTRY = 'ARD Registry';
@@ -60,9 +60,6 @@ interface DiscoveredAgent extends CatalogEntry {
   score: number;
 }
 
-/** Simulated network latency so each request/response leg is readable in the UI. */
-const NET_DELAY = 250;
-
 /** ARD resolution phase: ask the registry which agent can serve this intent. */
 async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefined> {
   const body = {
@@ -80,7 +77,6 @@ async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefine
     summary: `POST /api/v1/search — "${intent.queryText}"`,
     payload: body,
   });
-  await sleep(NET_DELAY);
   const res = await fetch(`${registryApiUrl()}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -125,7 +121,6 @@ async function verifyTrust(agent: DiscoveredAgent): Promise<boolean> {
     summary: `GET attestation ${attestation.uri.replace(/^https?:\/\/[^/]+/, '')} (claimed: ${tm.identity})`,
     payload: { identity: tm.identity, attestation },
   });
-  await sleep(NET_DELAY);
   try {
     const jwks = (await (await fetch(attestation.uri)).json()) as {
       subject?: string;
@@ -167,7 +162,6 @@ function getClient(agent: DiscoveredAgent): Promise<Client> {
         summary: `GET Agent Card ${agent.url.replace(/^https?:\/\/[^/]+/, '')}`,
         payload: { url: agent.url },
       });
-      await sleep(NET_DELAY);
       const card = await (await fetch(agent.url)).json();
       traceBus.push({
         type: 'discovery',
@@ -188,8 +182,8 @@ function getClient(agent: DiscoveredAgent): Promise<Client> {
 
 /**
  * Full ARD pipeline per intent: resolve → verify → connect → delegate over A2A.
- * The short sleeps between phases only pace the UI timeline; ordering within an
- * intent is strictly sequential either way.
+ * Runs at full speed — readable pacing is the UI's job (playback queue), not the
+ * protocol's.
  */
 async function delegate(intent: Intent): Promise<string> {
   try {
@@ -197,11 +191,9 @@ async function delegate(intent: Intent): Promise<string> {
     if (!agent) {
       return `⚠️ intent "${intent.intent}": no agent found in the ARD Registry (was it unregistered?)`;
     }
-    await sleep(200);
     if (!(await verifyTrust(agent))) {
       return `⚠️ ${agent.displayName}: refusing to connect — trust verification failed`;
     }
-    await sleep(200);
 
     const client = await getClient(agent);
     const stream = client.sendMessageStream({
@@ -273,8 +265,23 @@ class OrchestratorExecutor implements AgentExecutor {
       final: false,
     });
 
-    await sleep(300);
     const results = await Promise.all(intents.map((i) => delegate(i)));
+
+    eventBus.publish({
+      kind: 'status-update',
+      taskId,
+      contextId,
+      status: {
+        state: 'working',
+        message: agentMessage(
+          `all ${results.length} delegation(s) returned — aggregating results`,
+          contextId,
+          taskId
+        ),
+        timestamp: now(),
+      },
+      final: false,
+    });
 
     eventBus.publish({
       kind: 'artifact-update',

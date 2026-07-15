@@ -132,8 +132,9 @@ export const agentMessage = (text: string, contextId?: string, taskId?: string):
 });
 
 /**
- * Standard simulated worker: Task 作成 → working → (処理) → artifact → completed.
- * The delay range keeps the protocol timeline readable in the UI.
+ * Standard simulated worker: task created → working → (work) → artifact → completed.
+ * delayMs simulates the agent's actual processing time (e.g. an LLM call) — it is a
+ * simulation parameter, not UI pacing.
  */
 export function makeWorkerExecutor(opts: {
   workingNote: string;

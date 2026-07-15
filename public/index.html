@@ -42,7 +42,7 @@
   #layout {
     flex: 1; display: grid; min-height: 0;
     grid-template-columns: 290px 1fr 430px;
-    grid-template-rows: 215px 1fr;
+    grid-template-rows: 240px 1fr;
     grid-template-areas: "agents network log" "agents chat log";
     gap: 10px; padding: 10px;
   }
@@ -117,8 +117,13 @@
   .node.flash rect { stroke: var(--accent); filter: drop-shadow(0 0 6px rgba(34,211,238,.6)); }
   .node text { fill: var(--text); font-size: 12px; text-anchor: middle; }
   .node .role { fill: var(--muted); font-size: 9px; }
-  .edge { stroke: var(--border); stroke-width: 1.6; transition: stroke .25s; }
+  .edge { fill: none; stroke: var(--border); stroke-width: 1.6; transition: stroke .25s; }
+  .edge.ard { stroke-dasharray: 5 4; stroke: #2b3550; }
   .edge.flash { stroke: var(--accent); }
+  .edge.ard.flash { stroke: var(--c-ard); }
+  .legend { margin-left: auto; font-size: 10px; color: var(--muted); text-transform: none; letter-spacing: 0; }
+  .legend .solid { color: var(--accent); }
+  .legend .dashed { color: var(--c-ard); }
 
   /* ---- chat ---- */
   #chat { grid-area: chat; }
@@ -202,8 +207,8 @@
   </section>
 
   <section class="panel" id="network">
-    <h2>Network (message flow)</h2>
-    <svg viewBox="0 0 900 235" preserveAspectRatio="xMidYMid meet">
+    <h2>Network (message flow)<span class="legend"><span class="solid">━</span> A2A (data)&nbsp;&nbsp;<span class="dashed">┅</span> ARD (discovery)</span></h2>
+    <svg viewBox="0 0 900 260" preserveAspectRatio="xMidYMid meet">
       <g id="edges"></g>
       <g id="nodes"></g>
       <g id="pulses"></g>
@@ -243,23 +248,25 @@ const TYPE_META = {
   error:     { label: 'ERROR',     color: 'var(--c-error)' },
 };
 const NODES = [
-  { id: 'User',               label: '👤 User',        role: 'browser UI',        x: 90,  y: 150 },
-  { id: 'ARD Registry',       label: '📇 ARD Registry', role: 'discovery layer',       x: 400, y: 45 },
-  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A router',       x: 400, y: 150 },
-  { id: 'Translator Agent',   label: '🌐 Translator',   role: 'translation agent',   x: 780, y: 45 },
-  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: 'calculator agent',   x: 780, y: 130 },
-  { id: 'Weather Agent',      label: '⛅ Weather',      role: 'weather agent',   x: 780, y: 205 },
+  { id: 'User',               label: '👤 User',        role: 'browser UI',        x: 90,  y: 175 },
+  { id: 'ARD Registry',       label: '📇 ARD Registry', role: 'discovery layer',   x: 400, y: 50 },
+  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A router',        x: 400, y: 175 },
+  { id: 'Translator Agent',   label: '🌐 Translator',   role: 'translation agent', x: 780, y: 50 },
+  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: 'calculator agent',  x: 780, y: 150 },
+  { id: 'Weather Agent',      label: '⛅ Weather',      role: 'weather agent',     x: 780, y: 228 },
 ];
+// plane: 'a2a' = solid data-plane edge, 'ard' = dashed discovery-plane edge.
+// bend: quadratic control-point offset along the left normal of a→b (0 = straight).
 const EDGES = [
-  ['User', 'Orchestrator Agent'],
-  ['User', 'ARD Registry'],
-  ['Orchestrator Agent', 'ARD Registry'],
-  ['ARD Registry', 'Translator Agent'],
-  ['ARD Registry', 'Calculator Agent'],
-  ['ARD Registry', 'Weather Agent'],
-  ['Orchestrator Agent', 'Translator Agent'],
-  ['Orchestrator Agent', 'Calculator Agent'],
-  ['Orchestrator Agent', 'Weather Agent'],
+  { a: 'User', b: 'Orchestrator Agent', plane: 'a2a', bend: 0 },
+  { a: 'User', b: 'ARD Registry', plane: 'ard', bend: 25 },
+  { a: 'Orchestrator Agent', b: 'ARD Registry', plane: 'ard', bend: 0 },
+  { a: 'ARD Registry', b: 'Translator Agent', plane: 'ard', bend: -18 },
+  { a: 'ARD Registry', b: 'Calculator Agent', plane: 'ard', bend: -45 },
+  { a: 'ARD Registry', b: 'Weather Agent', plane: 'ard', bend: -70 },
+  { a: 'Orchestrator Agent', b: 'Translator Agent', plane: 'a2a', bend: -30 },
+  { a: 'Orchestrator Agent', b: 'Calculator Agent', plane: 'a2a', bend: 0 },
+  { a: 'Orchestrator Agent', b: 'Weather Agent', plane: 'a2a', bend: 20 },
 ];
 const SCENARIOS = [
   'translate hello world',
@@ -276,14 +283,23 @@ const edgeKey = (a, b) => [a, b].sort().join('|');
 function buildNetwork() {
   const svgNS = 'http://www.w3.org/2000/svg';
   const edgesG = $('#edges'), nodesG = $('#nodes');
-  for (const [a, b] of EDGES) {
+  for (const { a, b, plane, bend } of EDGES) {
     const na = NODES.find((n) => n.id === a), nb = NODES.find((n) => n.id === b);
-    const line = document.createElementNS(svgNS, 'line');
-    line.setAttribute('x1', na.x); line.setAttribute('y1', na.y);
-    line.setAttribute('x2', nb.x); line.setAttribute('y2', nb.y);
-    line.classList.add('edge');
-    edgesG.appendChild(line);
-    edgeByKey[edgeKey(a, b)] = { line, a: na, b: nb };
+    const path = document.createElementNS(svgNS, 'path');
+    let d;
+    if (bend === 0) {
+      d = `M ${na.x} ${na.y} L ${nb.x} ${nb.y}`;
+    } else {
+      const dx = nb.x - na.x, dy = nb.y - na.y;
+      const len = Math.hypot(dx, dy);
+      const cx = (na.x + nb.x) / 2 - (dy / len) * bend;
+      const cy = (na.y + nb.y) / 2 + (dx / len) * bend;
+      d = `M ${na.x} ${na.y} Q ${cx} ${cy} ${nb.x} ${nb.y}`;
+    }
+    path.setAttribute('d', d);
+    path.classList.add('edge', plane);
+    edgesG.appendChild(path);
+    edgeByKey[edgeKey(a, b)] = { path, a: na, b: nb };
   }
   for (const n of NODES) {
     const g = document.createElementNS(svgNS, 'g');
@@ -305,21 +321,23 @@ function flashTrace(ev) {
     flashAgentCard(id);
   }
   if (!edge) return;
-  edge.line.classList.add('flash');
-  setTimeout(() => edge.line.classList.remove('flash'), 650);
+  edge.path.classList.add('flash');
+  setTimeout(() => edge.path.classList.remove('flash'), 650);
 
-  const from = edge.a.id === ev.from ? edge.a : edge.b;
-  const to = edge.a.id === ev.from ? edge.b : edge.a;
+  const forward = edge.a.id === ev.from;
   const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
   dot.setAttribute('r', 5);
   dot.style.fill = getComputedStyle(document.documentElement).getPropertyValue(
     `--c-${ev.type in TYPE_META ? ev.type : 'request'}`);
   $('#pulses').appendChild(dot);
-  dot.animate(
-    [{ transform: `translate(${from.x}px, ${from.y}px)` },
-     { transform: `translate(${to.x}px, ${to.y}px)` }],
-    { duration: 550, easing: 'ease-in-out' }
-  ).onfinish = () => dot.remove();
+  const total = edge.path.getTotalLength();
+  const STEPS = 24;
+  const frames = [];
+  for (let i = 0; i <= STEPS; i++) {
+    const p = edge.path.getPointAtLength(((forward ? i : STEPS - i) / STEPS) * total);
+    frames.push({ transform: `translate(${p.x}px, ${p.y}px)` });
+  }
+  dot.animate(frames, { duration: 550, easing: 'ease-in-out' }).onfinish = () => dot.remove();
 }
 
 /* ---------- agents panel ---------- */
@@ -475,16 +493,36 @@ async function ardSearch() {
   }
 }
 
-/* ---------- SSE ---------- */
+/* ---------- SSE + playback queue ----------
+   The backend runs at full speed and stamps true timestamps; bursts of events
+   are re-paced here, in the renderer, so the animation stays readable without
+   polluting the protocol code with sleeps. Order is always preserved. */
+const playQueue = [];
+let playing = false;
+function pump() {
+  if (playing) return;
+  const ev = playQueue.shift();
+  if (!ev) return;
+  playing = true;
+  addLogEntry(ev);
+  flashTrace(ev);
+  const gap = playQueue.length > 10 ? 120 : 340; // catch up when a burst backs up
+  setTimeout(() => { playing = false; pump(); }, gap);
+}
+function enqueue(ev) {
+  // History replayed on (re)connect: render instantly, no animation.
+  if (Date.now() - new Date(ev.ts).getTime() > 3000) {
+    addLogEntry(ev);
+    return;
+  }
+  playQueue.push(ev);
+  pump();
+}
 function connectEvents() {
   const es = new EventSource('/api/events');
   es.onopen = () => { $('#conn-dot').classList.add('on'); $('#conn-label').textContent = 'live'; };
   es.onerror = () => { $('#conn-dot').classList.remove('on'); $('#conn-label').textContent = 'reconnecting...'; };
-  es.onmessage = (m) => {
-    const ev = JSON.parse(m.data);
-    addLogEntry(ev);
-    flashTrace(ev);
-  };
+  es.onmessage = (m) => enqueue(JSON.parse(m.data));
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>

@@ -42,8 +42,6 @@ function scoreEntry(queryTokens: string[], entry: IndexedEntry): number {
   return Math.round((hits / queryTokens.length) * 100);
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
 export interface CrawlSeed {
   port: number;
   name: string;
@@ -60,7 +58,6 @@ export async function crawlCatalogs(seeds: CrawlSeed[]): Promise<void> {
         summary: `GET /${AI_CATALOG_PATH}`,
         payload: { catalogUrl },
       });
-      await sleep(150);
       const catalog = (await (await fetch(catalogUrl)).json()) as AiCatalog;
       for (const entry of catalog.entries) {
         const existing = index.get(entry.identifier);
