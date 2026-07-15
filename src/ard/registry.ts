@@ -42,10 +42,25 @@ function scoreEntry(queryTokens: string[], entry: IndexedEntry): number {
   return Math.round((hits / queryTokens.length) * 100);
 }
 
-export async function crawlCatalogs(seedPorts: number[]): Promise<void> {
-  for (const port of seedPorts) {
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+export interface CrawlSeed {
+  port: number;
+  name: string;
+}
+
+export async function crawlCatalogs(seeds: CrawlSeed[]): Promise<void> {
+  for (const { port, name } of seeds) {
     const catalogUrl = `${agentUrl(port)}/${AI_CATALOG_PATH}`;
     try {
+      traceBus.push({
+        type: 'ard',
+        from: REGISTRY,
+        to: name,
+        summary: `GET /${AI_CATALOG_PATH}`,
+        payload: { catalogUrl },
+      });
+      await sleep(150);
       const catalog = (await (await fetch(catalogUrl)).json()) as AiCatalog;
       for (const entry of catalog.entries) {
         const existing = index.get(entry.identifier);
@@ -58,9 +73,9 @@ export async function crawlCatalogs(seedPorts: number[]): Promise<void> {
         });
         traceBus.push({
           type: 'ard',
-          from: REGISTRY,
-          to: entry.displayName,
-          summary: `Crawled catalog: indexed ${entry.identifier}`,
+          from: entry.displayName,
+          to: REGISTRY,
+          summary: `catalog received — indexed ${entry.identifier}`,
           payload: { catalogUrl, entry },
         });
       }
@@ -68,7 +83,7 @@ export async function crawlCatalogs(seedPorts: number[]): Promise<void> {
       traceBus.push({
         type: 'error',
         from: REGISTRY,
-        to: `localhost:${port}`,
+        to: name,
         summary: `Failed to fetch catalog: ${catalogUrl}`,
         payload: { error: e instanceof Error ? e.message : String(e) },
       });
@@ -114,7 +129,7 @@ export function setEntryEnabled(identifier: string, enabled: boolean): IndexedEn
   return entry;
 }
 
-export function startRegistry(seedPorts: number[]): Promise<void> {
+export function startRegistry(seeds: CrawlSeed[]): Promise<void> {
   const app = express();
   app.use(express.json());
 
@@ -131,7 +146,7 @@ export function startRegistry(seedPorts: number[]): Promise<void> {
 
   // Simulation admin surface (not part of the ARD spec).
   app.post('/admin/crawl', async (_req, res) => {
-    await crawlCatalogs(seedPorts);
+    await crawlCatalogs(seeds);
     res.json({ indexed: listEntries().length });
   });
   app.post('/admin/entries/enabled', (req, res) => {

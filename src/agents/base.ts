@@ -249,6 +249,15 @@ export function startAgentServer(def: AgentDefinition): Promise<void> {
   app.use('/a2a/jsonrpc', jsonRpcHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }));
   // ARD: publish this host's capability catalog for registry crawlers.
   app.get(`/${AI_CATALOG_PATH}`, (_req, res) => res.json(buildCatalog(def)));
+  // ARD: mock attestation endpoint referenced by the catalog's trustManifest.
+  app.get('/.well-known/spiffe/jwks', (_req, res) =>
+    res.json({
+      subject: `spiffe://sim.local/agents/${def.slug}`,
+      keys: [
+        { kty: 'OKP', crv: 'Ed25519', use: 'sig', kid: `sim-${def.slug}`, x: `mock-public-key-${def.slug}` },
+      ],
+    })
+  );
 
   return new Promise((resolve, reject) => {
     const server = app.listen(def.port, () => {

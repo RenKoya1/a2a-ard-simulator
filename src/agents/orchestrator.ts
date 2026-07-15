@@ -60,6 +60,9 @@ interface DiscoveredAgent extends CatalogEntry {
   score: number;
 }
 
+/** Simulated network latency so each request/response leg is readable in the UI. */
+const NET_DELAY = 250;
+
 /** ARD resolution phase: ask the registry which agent can serve this intent. */
 async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefined> {
   const body = {
@@ -70,6 +73,14 @@ async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefine
     },
     pageSize: 3,
   };
+  traceBus.push({
+    type: 'ard',
+    from: ORCHESTRATOR,
+    to: REGISTRY,
+    summary: `POST /api/v1/search — "${intent.queryText}"`,
+    payload: body,
+  });
+  await sleep(NET_DELAY);
   const res = await fetch(`${registryApiUrl()}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -79,30 +90,68 @@ async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefine
   const top = data.results[0];
   traceBus.push({
     type: 'ard',
-    from: ORCHESTRATOR,
-    to: REGISTRY,
+    from: REGISTRY,
+    to: ORCHESTRATOR,
     summary: top
-      ? `search "${intent.queryText}" → ${top.displayName} (score ${top.score})`
-      : `search "${intent.queryText}" → no match`,
-    payload: { request: body, results: data.results },
+      ? `${data.results.length} result(s) — top: ${top.displayName} (score ${top.score})`
+      : 'no matching agent in index',
+    payload: data,
   });
   return top;
 }
 
-/** ARD verification phase (simulated): check the trust manifest before connecting. */
-function verifyTrust(agent: DiscoveredAgent): boolean {
+/**
+ * ARD verification phase: confirm the publisher's identity by fetching the
+ * attestation referenced in the trust manifest from the publisher's own host,
+ * and checking that its subject matches the manifest identity.
+ */
+async function verifyTrust(agent: DiscoveredAgent): Promise<boolean> {
   const tm = agent.trustManifest;
-  const ok = Boolean(tm?.identity && tm.attestations?.length && tm.signature);
+  if (!tm?.identity || !tm.attestations?.length || !tm.signature) {
+    traceBus.push({
+      type: 'error',
+      from: ORCHESTRATOR,
+      to: agent.displayName,
+      summary: 'trustManifest missing or incomplete — refusing to connect',
+      payload: tm ?? { error: 'trustManifest missing' },
+    });
+    return false;
+  }
+  const attestation = tm.attestations.find((a) => a.type === 'SPIFFE-X509') ?? tm.attestations[0];
   traceBus.push({
-    type: ok ? 'verify' : 'error',
+    type: 'verify',
     from: ORCHESTRATOR,
     to: agent.displayName,
-    summary: ok
-      ? `trustManifest verified — ${tm!.identity} (${tm!.attestations.length} attestations)`
-      : `trustManifest verification failed — refusing to connect`,
-    payload: agent.trustManifest ?? { error: 'trustManifest missing' },
+    summary: `GET attestation ${attestation.uri.replace(/^https?:\/\/[^/]+/, '')} (claimed: ${tm.identity})`,
+    payload: { identity: tm.identity, attestation },
   });
-  return ok;
+  await sleep(NET_DELAY);
+  try {
+    const jwks = (await (await fetch(attestation.uri)).json()) as {
+      subject?: string;
+      keys?: unknown[];
+    };
+    const ok = jwks.subject === tm.identity && Array.isArray(jwks.keys) && jwks.keys.length > 0;
+    traceBus.push({
+      type: ok ? 'verify' : 'error',
+      from: agent.displayName,
+      to: ORCHESTRATOR,
+      summary: ok
+        ? `attestation OK — subject ${jwks.subject} matches manifest identity`
+        : `attestation mismatch — subject ${jwks.subject ?? '(none)'} ≠ ${tm.identity}`,
+      payload: jwks,
+    });
+    return ok;
+  } catch (e) {
+    traceBus.push({
+      type: 'error',
+      from: agent.displayName,
+      to: ORCHESTRATOR,
+      summary: `attestation fetch failed — ${e instanceof Error ? e.message : String(e)}`,
+      payload: { uri: attestation.uri },
+    });
+    return false;
+  }
 }
 
 const clientCache = new Map<string, Promise<Client>>();
@@ -111,12 +160,20 @@ function getClient(agent: DiscoveredAgent): Promise<Client> {
   let cached = clientCache.get(agent.url);
   if (!cached) {
     cached = (async () => {
-      const card = await (await fetch(agent.url)).json();
       traceBus.push({
         type: 'discovery',
         from: ORCHESTRATOR,
         to: agent.displayName,
-        summary: `Fetched Agent Card (${agent.url.replace(/^https?:\/\/[^/]+/, '')})`,
+        summary: `GET Agent Card ${agent.url.replace(/^https?:\/\/[^/]+/, '')}`,
+        payload: { url: agent.url },
+      });
+      await sleep(NET_DELAY);
+      const card = await (await fetch(agent.url)).json();
+      traceBus.push({
+        type: 'discovery',
+        from: agent.displayName,
+        to: ORCHESTRATOR,
+        summary: `Agent Card received — ${card.name} (A2A v${card.protocolVersion}, ${card.url})`,
         payload: card,
       });
       // Card URL is <base>/.well-known/agent-card.json — client wants the base.
@@ -140,11 +197,11 @@ async function delegate(intent: Intent): Promise<string> {
     if (!agent) {
       return `⚠️ intent "${intent.intent}": no agent found in the ARD Registry (was it unregistered?)`;
     }
-    await sleep(350);
-    if (!verifyTrust(agent)) {
+    await sleep(200);
+    if (!(await verifyTrust(agent))) {
       return `⚠️ ${agent.displayName}: refusing to connect — trust verification failed`;
     }
-    await sleep(350);
+    await sleep(200);
 
     const client = await getClient(agent);
     const stream = client.sendMessageStream({

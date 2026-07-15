@@ -11,8 +11,9 @@ const agents = [orchestratorAgent, translatorAgent, calculatorAgent, weatherAgen
 
 console.log('A2A Simulation — starting agents...');
 await Promise.all(agents.map(startAgentServer));
-await startRegistry(agents.map((a) => a.port));
+const seeds = agents.map((a) => ({ port: a.port, name: a.name }));
+await startRegistry(seeds);
 // ARD publishing→crawling phase: index every agent's ai-catalog.json.
-await crawlCatalogs(agents.map((a) => a.port));
+await crawlCatalogs(seeds);
 await startGateway(agents);
 console.log(`\nOpen ${agentUrl(PORTS.gateway)} to run the simulation.`);
