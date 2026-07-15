@@ -32,7 +32,7 @@ function translate(raw: string): string {
     .replace(/^(翻訳|translate)[::\s]*/i, '')
     .replace(/[「」]/g, '')
     .trim();
-  if (!input) throw new Error('翻訳するテキストがありません');
+  if (!input) throw new Error('no text to translate');
 
   const hasJapanese = /[぀-ヿ一-鿿]/.test(input);
   if (hasJapanese) {
@@ -54,7 +54,7 @@ function translate(raw: string): string {
 export const translatorAgent: AgentDefinition = {
   name: 'Translator Agent',
   slug: 'translator',
-  description: '簡易辞書ベースの日英/英日翻訳エージェント(モック)',
+  description: 'Mock dictionary-based Japanese/English translator agent',
   port: PORTS.translator,
   discoveryQueries: [
     'translate text between japanese and english',
@@ -64,13 +64,13 @@ export const translatorAgent: AgentDefinition = {
     {
       id: 'translate',
       name: 'Translate',
-      description: '日本語⇔英語のテキスト翻訳(辞書に無い語は [word] と表示)',
+      description: 'Translate text between Japanese and English (unknown words shown as [word])',
       tags: ['translation', 'ja', 'en'],
       examples: ['translate hello world', '「こんにちは 世界」を翻訳'],
     },
   ],
   executor: makeWorkerExecutor({
-    workingNote: '辞書を検索して翻訳中...',
+    workingNote: 'Looking up dictionary and translating...',
     delayMs: [400, 900],
     handle: (input) => ({ text: translate(input), artifactName: 'translation.txt' }),
   }),

@@ -138,7 +138,7 @@ export function startGateway(agents: AgentDefinition[]): Promise<void> {
         } else if (event.kind === 'status-update' && event.final) {
           state = event.status.state;
           if (event.status.state === 'failed') {
-            reply = partsText(event.status.message?.parts) || 'タスクが失敗しました';
+            reply = partsText(event.status.message?.parts) || 'task failed';
           }
         }
       }

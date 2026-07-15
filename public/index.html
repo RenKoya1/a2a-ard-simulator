@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -182,27 +182,27 @@
 <body>
 <header>
   <h1>🤖 A2A Protocol Simulator</h1>
-  <span class="sub">A2A (v0.3 / JSON-RPC) + ARD (Agentic Resource Discovery) シミュレーション</span>
-  <span id="conn"><span class="dot" id="conn-dot"></span><span id="conn-label">接続中...</span></span>
+  <span class="sub">A2A (v0.3 / JSON-RPC) + ARD (Agentic Resource Discovery) multi-agent simulation</span>
+  <span id="conn"><span class="dot" id="conn-dot"></span><span id="conn-label">connecting...</span></span>
 </header>
 
 <div id="layout">
   <section class="panel" id="agents">
-    <h2>エージェント <span id="log-actions" style="margin-left:auto"><button id="refresh-agents">更新</button></span></h2>
+    <h2>Agents <span id="log-actions" style="margin-left:auto"><button id="refresh-agents">Refresh</button></span></h2>
     <div id="agent-list"></div>
-    <h2>📇 ARD Registry <span id="log-actions" style="margin-left:auto"><button id="crawl">再クロール</button></span></h2>
+    <h2>📇 ARD Registry <span id="log-actions" style="margin-left:auto"><button id="crawl">Re-crawl</button></span></h2>
     <div id="ard-panel">
       <div id="ard-entries"></div>
       <div id="ard-search">
-        <input id="ard-query" placeholder="capability を検索 (例: weather)" autocomplete="off" />
-        <button id="ard-go">検索</button>
+        <input id="ard-query" placeholder="search capabilities (e.g. weather)" autocomplete="off" />
+        <button id="ard-go">Search</button>
       </div>
       <div id="ard-results"></div>
     </div>
   </section>
 
   <section class="panel" id="network">
-    <h2>ネットワーク(メッセージフロー)</h2>
+    <h2>Network (message flow)</h2>
     <svg viewBox="0 0 900 235" preserveAspectRatio="xMidYMid meet">
       <g id="edges"></g>
       <g id="nodes"></g>
@@ -211,19 +211,19 @@
   </section>
 
   <section class="panel" id="chat">
-    <h2>チャット(User → Orchestrator Agent)</h2>
+    <h2>Chat (User → Orchestrator Agent)</h2>
     <div id="messages"></div>
-    <div id="typing">Orchestrator Agent が処理中...</div>
+    <div id="typing">Orchestrator Agent is working...</div>
     <div id="scenarios"></div>
     <div id="composer">
-      <input id="input" placeholder="例: 東京の天気と 2+3*4 の計算" autocomplete="off" />
-      <button id="send">送信</button>
+      <input id="input" placeholder="e.g. weather in Tokyo and calculate 2+3*4" autocomplete="off" />
+      <button id="send">Send</button>
     </div>
   </section>
 
   <section class="panel" id="log">
-    <h2>A2A プロトコルログ
-      <span id="log-actions"><button id="clear-log">クリア</button></span>
+    <h2>A2A Protocol Log
+      <span id="log-actions"><button id="clear-log">Clear</button></span>
     </h2>
     <div id="filters"></div>
     <div id="log-list"></div>
@@ -243,12 +243,12 @@ const TYPE_META = {
   error:     { label: 'ERROR',     color: 'var(--c-error)' },
 };
 const NODES = [
-  { id: 'User',               label: '👤 User',        role: 'ブラウザ UI',        x: 90,  y: 150 },
-  { id: 'ARD Registry',       label: '📇 ARD Registry', role: 'discovery 層',       x: 400, y: 45 },
-  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A ルーター',       x: 400, y: 150 },
-  { id: 'Translator Agent',   label: '🌐 Translator',   role: '翻訳エージェント',   x: 780, y: 45 },
-  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: '計算エージェント',   x: 780, y: 130 },
-  { id: 'Weather Agent',      label: '⛅ Weather',      role: '天気エージェント',   x: 780, y: 205 },
+  { id: 'User',               label: '👤 User',        role: 'browser UI',        x: 90,  y: 150 },
+  { id: 'ARD Registry',       label: '📇 ARD Registry', role: 'discovery layer',       x: 400, y: 45 },
+  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A router',       x: 400, y: 150 },
+  { id: 'Translator Agent',   label: '🌐 Translator',   role: 'translation agent',   x: 780, y: 45 },
+  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: 'calculator agent',   x: 780, y: 130 },
+  { id: 'Weather Agent',      label: '⛅ Weather',      role: 'weather agent',   x: 780, y: 205 },
 ];
 const EDGES = [
   ['User', 'Orchestrator Agent'],
@@ -263,9 +263,9 @@ const EDGES = [
 ];
 const SCENARIOS = [
   'translate hello world',
-  '計算: (2+3)*4 - 5',
-  '東京の天気',
-  'ロンドンの天気と 12*(3+4) の計算、あと translate good morning',
+  'calculate (2+3)*4 - 5',
+  'weather in Tokyo',
+  'weather in London and calculate 12*(3+4), also translate good morning',
 ];
 
 const $ = (s) => document.querySelector(s);
@@ -342,7 +342,7 @@ async function loadAgents() {
       list.appendChild(el);
     }
   } catch {
-    list.innerHTML = '<div class="agent-card"><div class="desc">エージェント情報を取得できません</div></div>';
+    list.innerHTML = '<div class="agent-card"><div class="desc">failed to fetch agent info</div></div>';
   }
 }
 function flashAgentCard(name) {
@@ -383,7 +383,7 @@ function addLogEntry(ev) {
     <summary>
       <span class="badge">${meta.label}</span>
       <span class="route"><b>${esc(ev.from)}</b> → <b>${esc(ev.to)}</b></span>
-      <span class="time">${new Date(ev.ts).toLocaleTimeString('ja-JP')}${ev.taskId ? ' ・ task:' + esc(ev.taskId.slice(0, 8)) : ''}</span>
+      <span class="time">${new Date(ev.ts).toLocaleTimeString('en-GB')}${ev.taskId ? ' ・ task:' + esc(ev.taskId.slice(0, 8)) : ''}</span>
       <span class="summary-text">${esc(ev.summary)}</span>
     </summary>
     <pre>${esc(JSON.stringify(ev.payload ?? {}, null, 2))}</pre>`;
@@ -417,9 +417,9 @@ async function send(text) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? res.statusText);
     contextId = data.contextId ?? contextId;
-    addMessage('agent', data.reply || '(応答なし)', { state: data.state, taskId: data.taskId, error: data.state === 'failed' });
+    addMessage('agent', data.reply || '(no reply)', { state: data.state, taskId: data.taskId, error: data.state === 'failed' });
   } catch (e) {
-    addMessage('agent', `エラー: ${e.message}`, { error: true });
+    addMessage('agent', `Error: ${e.message}`, { error: true });
   } finally {
     $('#send').disabled = false;
     $('#typing').style.display = 'none';
@@ -453,14 +453,14 @@ async function loadArd() {
       wrap.appendChild(row);
     }
   } catch {
-    wrap.innerHTML = '<div class="ard-entry">Registry に接続できません</div>';
+    wrap.innerHTML = '<div class="ard-entry">cannot reach the registry</div>';
   }
 }
 async function ardSearch() {
   const text = $('#ard-query').value.trim();
   if (!text) return;
   const box = $('#ard-results');
-  box.innerHTML = '検索中...';
+  box.innerHTML = 'searching...';
   try {
     const { results } = await (await fetch('/api/ard/search', {
       method: 'POST',
@@ -469,17 +469,17 @@ async function ardSearch() {
     })).json();
     box.innerHTML = results.length
       ? results.map((r) => `<div class="hit"><b>${esc(r.displayName)}</b><span class="score">score ${r.score}</span></div>`).join('')
-      : '<div class="hit">該当なし</div>';
+      : '<div class="hit">no match</div>';
   } catch {
-    box.innerHTML = '<div class="hit">検索エラー</div>';
+    box.innerHTML = '<div class="hit">search error</div>';
   }
 }
 
 /* ---------- SSE ---------- */
 function connectEvents() {
   const es = new EventSource('/api/events');
-  es.onopen = () => { $('#conn-dot').classList.add('on'); $('#conn-label').textContent = 'ライブ接続中'; };
-  es.onerror = () => { $('#conn-dot').classList.remove('on'); $('#conn-label').textContent = '再接続中...'; };
+  es.onopen = () => { $('#conn-dot').classList.add('on'); $('#conn-label').textContent = 'live'; };
+  es.onerror = () => { $('#conn-dot').classList.remove('on'); $('#conn-label').textContent = 'reconnecting...'; };
   es.onmessage = (m) => {
     const ev = JSON.parse(m.data);
     addLogEntry(ev);
@@ -508,7 +508,7 @@ loadArd();
 $('#crawl').onclick = async () => { await fetch('/api/ard/crawl', { method: 'POST' }); loadArd(); };
 $('#ard-go').onclick = ardSearch;
 $('#ard-query').addEventListener('keydown', (e) => { if (e.key === 'Enter') ardSearch(); });
-addMessage('agent', 'A2A + ARD シミュレーターへようこそ。\nOrchestrator はエージェントを直接知りません — 依頼ごとに ARD Registry で検索(discovery)し、trustManifest を検証してから A2A で接続します。\n左下の ARD Registry パネルでエージェントの登録を OFF にすると、そのエージェントは「発見できなく」なります。試してみてください。');
+addMessage('agent', 'Welcome to the A2A + ARD simulator.\nThe Orchestrator does not know any agent up front — for every request it searches the ARD Registry (discovery), verifies the trustManifest, then connects over A2A.\nTry toggling an agent OFF in the ARD Registry panel: it becomes undiscoverable and delegation fails.');
 </script>
 </body>
 </html>

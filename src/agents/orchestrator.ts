@@ -83,7 +83,7 @@ async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefine
     to: REGISTRY,
     summary: top
       ? `search "${intent.queryText}" → ${top.displayName} (score ${top.score})`
-      : `search "${intent.queryText}" → 該当なし`,
+      : `search "${intent.queryText}" → no match`,
     payload: { request: body, results: data.results },
   });
   return top;
@@ -98,8 +98,8 @@ function verifyTrust(agent: DiscoveredAgent): boolean {
     from: ORCHESTRATOR,
     to: agent.displayName,
     summary: ok
-      ? `trustManifest 検証 OK — ${tm!.identity} (${tm!.attestations.length} attestations)`
-      : `trustManifest 検証失敗 — 接続を拒否`,
+      ? `trustManifest verified — ${tm!.identity} (${tm!.attestations.length} attestations)`
+      : `trustManifest verification failed — refusing to connect`,
     payload: agent.trustManifest ?? { error: 'trustManifest missing' },
   });
   return ok;
@@ -116,7 +116,7 @@ function getClient(agent: DiscoveredAgent): Promise<Client> {
         type: 'discovery',
         from: ORCHESTRATOR,
         to: agent.displayName,
-        summary: `Agent Card 取得 (${agent.url.replace(/^https?:\/\/[^/]+/, '')})`,
+        summary: `Fetched Agent Card (${agent.url.replace(/^https?:\/\/[^/]+/, '')})`,
         payload: card,
       });
       // Card URL is <base>/.well-known/agent-card.json — client wants the base.
@@ -129,16 +129,22 @@ function getClient(agent: DiscoveredAgent): Promise<Client> {
   return cached;
 }
 
-/** Full ARD pipeline per intent: resolve → verify → connect → delegate over A2A. */
+/**
+ * Full ARD pipeline per intent: resolve → verify → connect → delegate over A2A.
+ * The short sleeps between phases only pace the UI timeline; ordering within an
+ * intent is strictly sequential either way.
+ */
 async function delegate(intent: Intent): Promise<string> {
   try {
     const agent = await discoverAgent(intent);
     if (!agent) {
-      return `⚠️ intent "${intent.intent}": ARD Registry で該当エージェントが見つかりません(登録解除されていませんか?)`;
+      return `⚠️ intent "${intent.intent}": no agent found in the ARD Registry (was it unregistered?)`;
     }
+    await sleep(350);
     if (!verifyTrust(agent)) {
-      return `⚠️ ${agent.displayName}: trust 検証に失敗したため接続しません`;
+      return `⚠️ ${agent.displayName}: refusing to connect — trust verification failed`;
     }
+    await sleep(350);
 
     const client = await getClient(agent);
     const stream = client.sendMessageStream({
@@ -161,9 +167,9 @@ async function delegate(intent: Intent): Promise<string> {
       }
     }
     if (failure) return `⚠️ ${agent.displayName}: ${failure}`;
-    return `✅ ${agent.displayName} (ARD score ${agent.score}): ${artifacts.filter(Boolean).join(' / ') || '(結果なし)'}`;
+    return `✅ ${agent.displayName} (ARD score ${agent.score}): ${artifacts.filter(Boolean).join(' / ') || '(no output)'}`;
   } catch (e) {
-    return `⚠️ intent "${intent.intent}": 通信エラー — ${e instanceof Error ? e.message : String(e)}`;
+    return `⚠️ intent "${intent.intent}": transport error — ${e instanceof Error ? e.message : String(e)}`;
   }
 }
 
@@ -177,7 +183,7 @@ class OrchestratorExecutor implements AgentExecutor {
     if (intents.length === 0) {
       eventBus.publish(
         agentMessage(
-          '振り分け先が見つかりませんでした。「翻訳」「計算(例: 2+3*4)」「天気(例: 東京の天気)」を含むメッセージを送ってください。組み合わせも可能です。',
+          'No routable intent found. Try a message containing "translate", a math expression (e.g. 2+3*4), or "weather" (e.g. weather in Tokyo). Combinations work too.',
           contextId
         )
       );
@@ -201,7 +207,7 @@ class OrchestratorExecutor implements AgentExecutor {
       status: {
         state: 'working',
         message: agentMessage(
-          `intent 抽出: [${intents.map((i) => i.intent).join(', ')}] → ARD Registry でエージェントを検索します`,
+          `extracted intents: [${intents.map((i) => i.intent).join(', ')}] → searching the ARD Registry for agents`,
           contextId,
           taskId
         ),
@@ -240,15 +246,15 @@ export const orchestratorAgent: AgentDefinition = {
   name: ORCHESTRATOR,
   slug: 'orchestrator',
   description:
-    'ユーザーの依頼を intent に分解し、ARD Registry でエージェントを発見・検証してから A2A で委譲するルーター',
+    'Router that splits a request into intents, then discovers and verifies agents via the ARD Registry before delegating over A2A',
   port: PORTS.orchestrator,
   skills: [
     {
       id: 'orchestrate',
       name: 'Orchestrate',
-      description: 'intent 抽出 → ARD discovery → trust 検証 → A2A 並列委譲・結果集約',
+      description: 'Intent extraction → ARD discovery → trust verification → parallel A2A delegation and aggregation',
       tags: ['router', 'orchestration', 'ard'],
-      examples: ['東京の天気と 2+3*4 の計算', 'translate hello world'],
+      examples: ['weather in Tokyo and calculate 2+3*4', 'translate hello world'],
     },
   ],
   discoveryQueries: ['route a user request to specialist agents', 'orchestrate multiple agents'],

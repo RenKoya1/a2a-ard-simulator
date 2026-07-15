@@ -2,27 +2,27 @@ import { PORTS } from '../config.js';
 import { makeWorkerExecutor, type AgentDefinition } from './base.js';
 
 const CITIES: Record<string, string> = {
-  tokyo: '東京',
-  東京: '東京',
-  osaka: '大阪',
-  大阪: '大阪',
-  kyoto: '京都',
-  京都: '京都',
-  sapporo: '札幌',
-  札幌: '札幌',
-  fukuoka: '福岡',
-  福岡: '福岡',
-  naha: '那覇',
-  那覇: '那覇',
-  london: 'ロンドン',
-  ロンドン: 'ロンドン',
-  paris: 'パリ',
-  パリ: 'パリ',
-  'new york': 'ニューヨーク',
-  ニューヨーク: 'ニューヨーク',
+  tokyo: 'Tokyo',
+  東京: 'Tokyo',
+  osaka: 'Osaka',
+  大阪: 'Osaka',
+  kyoto: 'Kyoto',
+  京都: 'Kyoto',
+  sapporo: 'Sapporo',
+  札幌: 'Sapporo',
+  fukuoka: 'Fukuoka',
+  福岡: 'Fukuoka',
+  naha: 'Naha',
+  那覇: 'Naha',
+  london: 'London',
+  ロンドン: 'London',
+  paris: 'Paris',
+  パリ: 'Paris',
+  'new york': 'New York',
+  ニューヨーク: 'New York',
 };
 
-const CONDITIONS = ['☀️ 晴れ', '⛅ 晴れ時々くもり', '☁️ くもり', '🌧️ 雨', '⛈️ 雷雨', '🌫️ 霧'];
+const CONDITIONS = ['☀️ Sunny', '⛅ Partly cloudy', '☁️ Cloudy', '🌧️ Rain', '⛈️ Thunderstorm', '🌫️ Fog'];
 
 // Deterministic per city+date so repeated queries agree within a day.
 function pseudoRandom(seed: string): number {
@@ -39,7 +39,7 @@ function forecast(raw: string): string {
   const key = Object.keys(CITIES).find((c) => input.includes(c));
   if (!key) {
     throw new Error(
-      `対応していない都市です。利用可能: ${[...new Set(Object.values(CITIES))].join(', ')}`
+      `unsupported city. Available: ${[...new Set(Object.values(CITIES))].join(', ')}`
     );
   }
   const city = CITIES[key];
@@ -50,13 +50,13 @@ function forecast(raw: string): string {
   const condition = CONDITIONS[Math.floor(r1 * CONDITIONS.length)];
   const temp = Math.round(12 + r2 * 20);
   const humidity = Math.round(35 + r3 * 55);
-  return `${city}の天気 (${date}): ${condition} / 気温 ${temp}℃ / 湿度 ${humidity}%`;
+  return `Weather in ${city} (${date}): ${condition} / ${temp}°C / humidity ${humidity}%`;
 }
 
 export const weatherAgent: AgentDefinition = {
   name: 'Weather Agent',
   slug: 'weather',
-  description: '都市名から模擬天気予報を返すエージェント(決定的な擬似乱数)',
+  description: 'Mock weather agent returning deterministic forecasts per city and date',
   port: PORTS.weather,
   discoveryQueries: [
     'weather forecast temperature for a city',
@@ -66,13 +66,13 @@ export const weatherAgent: AgentDefinition = {
     {
       id: 'forecast',
       name: 'Weather Forecast',
-      description: '対応都市の当日の模擬天気(天候・気温・湿度)を返す',
+      description: 'Return a mock same-day forecast (condition, temperature, humidity) for supported cities',
       tags: ['weather', 'forecast'],
-      examples: ['東京の天気', 'weather in London'],
+      examples: ['weather in Tokyo', '東京の天気'],
     },
   ],
   executor: makeWorkerExecutor({
-    workingNote: '観測データを取得中...',
+    workingNote: 'Fetching observation data...',
     delayMs: [600, 1300],
     handle: (input) => ({ text: forecast(input), artifactName: 'forecast.txt' }),
   }),

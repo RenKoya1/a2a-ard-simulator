@@ -3,17 +3,17 @@ import { makeWorkerExecutor, type AgentDefinition } from './base.js';
 
 function calculate(raw: string): string {
   const expr = (raw.match(/[-\d(][\d+\-*/().%\s]*/)?.[0] ?? '').trim();
-  if (!expr || !/\d/.test(expr)) throw new Error(`数式が見つかりません: "${raw}"`);
-  if (!/^[\d+\-*/().%\s]+$/.test(expr)) throw new Error(`不正な文字を含む式です: "${expr}"`);
+  if (!expr || !/\d/.test(expr)) throw new Error(`no arithmetic expression found in: "${raw}"`);
+  if (!/^[\d+\-*/().%\s]+$/.test(expr)) throw new Error(`expression contains invalid characters: "${expr}"`);
 
   let result: unknown;
   try {
     result = new Function(`"use strict"; return (${expr});`)();
   } catch {
-    throw new Error(`式を評価できません: "${expr}"`);
+    throw new Error(`cannot evaluate expression: "${expr}"`);
   }
   if (typeof result !== 'number' || !Number.isFinite(result)) {
-    throw new Error(`計算結果が数値になりません: "${expr}"`);
+    throw new Error(`result is not a finite number: "${expr}"`);
   }
   return `${expr} = ${result}`;
 }
@@ -21,7 +21,7 @@ function calculate(raw: string): string {
 export const calculatorAgent: AgentDefinition = {
   name: 'Calculator Agent',
   slug: 'calculator',
-  description: '四則演算の式を評価する計算エージェント',
+  description: 'Arithmetic agent that evaluates basic math expressions',
   port: PORTS.calculator,
   discoveryQueries: [
     'evaluate arithmetic expression calculator math',
@@ -31,13 +31,13 @@ export const calculatorAgent: AgentDefinition = {
     {
       id: 'calculate',
       name: 'Calculate',
-      description: '四則演算 (+ - * / % 括弧) の式を評価して結果を返す',
+      description: 'Evaluate arithmetic expressions (+ - * / % and parentheses)',
       tags: ['math', 'calculator'],
-      examples: ['calc (2+3)*4', '計算: 100/8'],
+      examples: ['calc (2+3)*4', 'calculate 100/8'],
     },
   ],
   executor: makeWorkerExecutor({
-    workingNote: '式を解析して計算中...',
+    workingNote: 'Parsing and evaluating expression...',
     delayMs: [300, 700],
     handle: (input) => ({ text: calculate(input), artifactName: 'calculation.txt' }),
   }),

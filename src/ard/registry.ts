@@ -60,7 +60,7 @@ export async function crawlCatalogs(seedPorts: number[]): Promise<void> {
           type: 'ard',
           from: REGISTRY,
           to: entry.displayName,
-          summary: `カタログをクロール: ${entry.identifier} を索引化`,
+          summary: `Crawled catalog: indexed ${entry.identifier}`,
           payload: { catalogUrl, entry },
         });
       }
@@ -69,7 +69,7 @@ export async function crawlCatalogs(seedPorts: number[]): Promise<void> {
         type: 'error',
         from: REGISTRY,
         to: `localhost:${port}`,
-        summary: `カタログ取得失敗: ${catalogUrl}`,
+        summary: `Failed to fetch catalog: ${catalogUrl}`,
         payload: { error: e instanceof Error ? e.message : String(e) },
       });
     }
@@ -108,7 +108,7 @@ export function setEntryEnabled(identifier: string, enabled: boolean): IndexedEn
     type: 'ard',
     from: 'User',
     to: REGISTRY,
-    summary: `${enabled ? '再登録' : '登録解除'}: ${entry.displayName} (${identifier})`,
+    summary: `${enabled ? 'Re-registered' : 'Unregistered'}: ${entry.displayName} (${identifier})`,
     payload: { identifier, enabled },
   });
   return entry;
