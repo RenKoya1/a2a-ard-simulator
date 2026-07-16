@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { CONCURRENT_MS, TYPE_META, type TraceType } from '@/lib/protocol';
+import { TYPE_META, type TraceType } from '@/lib/protocol';
 import { usePlayback, type LogEntry } from '@/lib/playback';
 
 const fmtClock = (ts: string) => {
@@ -9,11 +9,14 @@ const fmtClock = (ts: string) => {
   return d.toLocaleTimeString('en-GB') + '.' + String(d.getMilliseconds()).padStart(3, '0');
 };
 
-function DeltaChip({ deltaMs }: { deltaMs: number | null }) {
+// ∥ is asserted by the playback queue (different causal lanes, same instant) —
+// not inferred from the timestamp gap, which can't tell fast-sequential apart
+// from parallel.
+function DeltaChip({ deltaMs, concurrent }: { deltaMs: number | null; concurrent: boolean }) {
   if (deltaMs === null) return <span className="delta first">t₀</span>;
-  if (deltaMs < CONCURRENT_MS)
+  if (concurrent)
     return (
-      <span className="delta concurrent" title="happened in the same instant (parallel)">
+      <span className="delta concurrent" title="parallel lanes — genuinely concurrent">
         ∥ +{deltaMs}ms
       </span>
     );
@@ -22,12 +25,12 @@ function DeltaChip({ deltaMs }: { deltaMs: number | null }) {
 }
 
 function Entry({ entry }: { entry: LogEntry }) {
-  const { ev, deltaMs } = entry;
+  const { ev, deltaMs, concurrent } = entry;
   const meta = TYPE_META[ev.type] ?? TYPE_META.request;
   return (
     <details className="entry" style={{ '--type-color': meta.color } as CSSProperties}>
       <summary>
-        <DeltaChip deltaMs={deltaMs} />
+        <DeltaChip deltaMs={deltaMs} concurrent={concurrent} />
         <span className="badge">{meta.label}</span>
         <span className="route">
           <b>{ev.from}</b> → <b>{ev.to}</b>

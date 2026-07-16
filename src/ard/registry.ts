@@ -55,6 +55,7 @@ export async function crawlCatalogs(seeds: CrawlSeed[]): Promise<void> {
         type: 'ard',
         from: REGISTRY,
         to: name,
+        lane: 'ard:crawl',
         summary: `GET /${AI_CATALOG_PATH}`,
         payload: { catalogUrl },
       });
@@ -72,6 +73,7 @@ export async function crawlCatalogs(seeds: CrawlSeed[]): Promise<void> {
           type: 'ard',
           from: entry.displayName,
           to: REGISTRY,
+          lane: 'ard:crawl',
           summary: `catalog received — indexed ${entry.identifier}`,
           payload: { catalogUrl, entry },
         });
@@ -81,6 +83,7 @@ export async function crawlCatalogs(seeds: CrawlSeed[]): Promise<void> {
         type: 'error',
         from: REGISTRY,
         to: name,
+        lane: 'ard:crawl',
         summary: `Failed to fetch catalog: ${catalogUrl}`,
         payload: { error: e instanceof Error ? e.message : String(e) },
       });
@@ -120,6 +123,7 @@ export function setEntryEnabled(identifier: string, enabled: boolean): IndexedEn
     type: 'ard',
     from: 'User',
     to: REGISTRY,
+    lane: 'user:admin',
     summary: `${enabled ? 'Re-registered' : 'Unregistered'}: ${entry.displayName} (${identifier})`,
     payload: { identifier, enabled },
   });

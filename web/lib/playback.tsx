@@ -13,12 +13,15 @@ import { CONCURRENT_MS, type TraceEvent } from './protocol';
 import { traceFlash } from './bus';
 
 /* SSE + timeline-faithful playback.
-   The backend runs at full speed and stamps true timestamps. The renderer
-   replays events preserving their REAL time relationships:
-   - events within CONCURRENT_MS of each other happened together (e.g. a
-     parallel fan-out) → rendered in the same frame, marked ∥ in the log
-   - sequential events are spaced by their actual gap (clamped to stay
-     watchable), so "search, THEN verify, THEN pay" reads as a sequence
+   The backend runs at full speed, stamps true timestamps, and tags every
+   event with a causal `lane` (one lane per intent pipeline / task lifecycle).
+   The renderer replays events preserving their REAL relationships:
+   - CONCURRENT (one frame, marked ∥): same instant AND different lanes —
+     e.g. the parallel per-intent fan-out. Same-lane events are causal chains
+     and NEVER render simultaneously, however fast they happened.
+   - Causal hand-offs (B.from === A.to, e.g. worker reply → orchestrator
+     aggregate) also never merge, even across lanes.
+   - Sequential events replay with their actual gap, clamped to stay watchable.
    Order is always preserved exactly as emitted. */
 
 export interface LogEntry {
@@ -26,6 +29,8 @@ export interface LogEntry {
   ev: TraceEvent;
   /** ms since the previous log entry; null for the very first one */
   deltaMs: number | null;
+  /** true when this event rendered in the same frame as the previous one (parallel lanes) */
+  concurrent: boolean;
 }
 
 interface PlaybackContextValue {
@@ -54,11 +59,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const queue = useRef<TraceEvent[]>([]);
   const playing = useRef(false);
 
-  const append = useCallback((ev: TraceEvent) => {
+  const append = useCallback((ev: TraceEvent, concurrent = false) => {
     const t = evTime(ev);
     const deltaMs = lastLogTs.current === null ? null : t - lastLogTs.current;
     lastLogTs.current = t;
-    const entry: LogEntry = { key: ++seq.current, ev, deltaMs };
+    const entry: LogEntry = { key: ++seq.current, ev, deltaMs, concurrent };
     setEntries((prev) => {
       const next = [...prev, entry];
       return next.length > MAX_ENTRIES ? next.slice(next.length - MAX_ENTRIES) : next;
@@ -68,9 +73,20 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const clearLog = useCallback(() => setEntries([]), []);
 
   useEffect(() => {
-    const play = (ev: TraceEvent) => {
-      append(ev);
+    const play = (ev: TraceEvent, concurrent = false) => {
+      append(ev, concurrent);
       traceFlash.emit(ev);
+    };
+    // Genuine concurrency only: same instant, different causal lanes, and no
+    // causal hand-off (next.from === prev.to) with anything already in frame.
+    const mayRunConcurrently = (group: TraceEvent[], next: TraceEvent) => {
+      if (evTime(next) - evTime(group[0]) >= CONCURRENT_MS) return false;
+      if (!next.lane) return false;
+      for (const g of group) {
+        if (!g.lane || g.lane === next.lane) return false; // same causal chain
+        if (next.from === g.to || next.to === g.from) return false; // causal hand-off
+      }
+      return true;
     };
     const pump = () => {
       if (playing.current) return;
@@ -78,15 +94,17 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       if (!ev) return;
       playing.current = true;
       play(ev);
-      // Drain everything that happened in the same instant — truly
-      // simultaneous, so it renders simultaneously.
-      while (queue.current.length && evTime(queue.current[0]) - evTime(ev) < CONCURRENT_MS) {
-        play(queue.current.shift()!);
+      // Drain only genuinely parallel events (different lanes, same instant).
+      const group = [ev];
+      while (queue.current.length && mayRunConcurrently(group, queue.current[0])) {
+        const sib = queue.current.shift()!;
+        play(sib, true);
+        group.push(sib);
       }
       let gap = 0;
       if (queue.current.length) {
-        const real = evTime(queue.current[0]) - evTime(ev);
-        gap = Math.min(Math.max(real, 120), 1500); // faithful, but clamped watchable
+        const real = evTime(queue.current[0]) - evTime(group[group.length - 1]);
+        gap = Math.min(Math.max(real, 260), 1500); // faithful, but clamped watchable
         if (queue.current.length > 20) gap = Math.min(gap, 100); // catch up on deep backlog
       }
       setTimeout(() => {

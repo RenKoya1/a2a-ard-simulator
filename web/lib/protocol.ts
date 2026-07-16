@@ -22,6 +22,12 @@ export interface TraceEvent {
   summary: string;
   taskId?: string;
   contextId?: string;
+  /**
+   * Causality lane (mirrors src/trace.ts). Events in the same lane form a
+   * sequential causal chain; only events in different lanes may be rendered
+   * as simultaneous.
+   */
+  lane?: string;
   payload?: unknown;
 }
 
@@ -39,7 +45,8 @@ export const TYPE_META: Record<TraceType, { label: string; color: string }> = {
   error:     { label: 'ERROR',     color: 'var(--c-error)' },
 };
 
-// Events closer than this happened together (same burst).
+// Same-instant threshold. Being this close in time is necessary but NOT
+// sufficient for concurrency — events must also be on different causal lanes.
 export const CONCURRENT_MS = 40;
 
 export type PayMode = 'direct' | 'escrow';

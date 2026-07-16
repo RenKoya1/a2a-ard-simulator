@@ -73,7 +73,7 @@ interface DiscoveredAgent extends CatalogEntry {
 }
 
 /** ARD resolution phase: ask the registry which agent can serve this intent. */
-async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefined> {
+async function discoverAgent(intent: Intent, lane: string): Promise<DiscoveredAgent | undefined> {
   const body = {
     query: {
       text: intent.queryText,
@@ -86,6 +86,7 @@ async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefine
     type: 'ard',
     from: ORCHESTRATOR,
     to: REGISTRY,
+    lane,
     summary: `POST /api/v1/search — "${intent.queryText}"`,
     payload: body,
   });
@@ -100,6 +101,7 @@ async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefine
     type: 'ard',
     from: REGISTRY,
     to: ORCHESTRATOR,
+    lane,
     summary: top
       ? `${data.results.length} result(s) — top: ${top.displayName} (score ${top.score})`
       : 'no matching agent in index',
@@ -113,13 +115,14 @@ async function discoverAgent(intent: Intent): Promise<DiscoveredAgent | undefine
  * attestation referenced in the trust manifest from the publisher's own host,
  * and checking that its subject matches the manifest identity.
  */
-async function verifyTrust(agent: DiscoveredAgent): Promise<boolean> {
+async function verifyTrust(agent: DiscoveredAgent, lane: string): Promise<boolean> {
   const tm = agent.trustManifest;
   if (!tm?.identity || !tm.attestations?.length || !tm.signature) {
     traceBus.push({
       type: 'error',
       from: ORCHESTRATOR,
       to: agent.displayName,
+      lane,
       summary: 'trustManifest missing or incomplete — refusing to connect',
       payload: tm ?? { error: 'trustManifest missing' },
     });
@@ -130,6 +133,7 @@ async function verifyTrust(agent: DiscoveredAgent): Promise<boolean> {
     type: 'verify',
     from: ORCHESTRATOR,
     to: agent.displayName,
+    lane,
     summary: `GET attestation ${attestation.uri.replace(/^https?:\/\/[^/]+/, '')} (claimed: ${tm.identity})`,
     payload: { identity: tm.identity, attestation },
   });
@@ -143,6 +147,7 @@ async function verifyTrust(agent: DiscoveredAgent): Promise<boolean> {
       type: ok ? 'verify' : 'error',
       from: agent.displayName,
       to: ORCHESTRATOR,
+      lane,
       summary: ok
         ? `attestation OK — subject ${jwks.subject} matches manifest identity`
         : `attestation mismatch — subject ${jwks.subject ?? '(none)'} ≠ ${tm.identity}`,
@@ -154,6 +159,7 @@ async function verifyTrust(agent: DiscoveredAgent): Promise<boolean> {
       type: 'error',
       from: agent.displayName,
       to: ORCHESTRATOR,
+      lane,
       summary: `attestation fetch failed — ${e instanceof Error ? e.message : String(e)}`,
       payload: { uri: attestation.uri },
     });
@@ -166,11 +172,12 @@ async function verifyTrust(agent: DiscoveredAgent): Promise<boolean> {
  * Identity registry and carry a validation score above threshold. Like the ARD
  * trust filter, this is a hard gate — relevance cannot buy eligibility.
  */
-async function checkChainEligibility(agent: DiscoveredAgent): Promise<boolean> {
+async function checkChainEligibility(agent: DiscoveredAgent, lane: string): Promise<boolean> {
   traceBus.push({
     type: 'chain',
     from: ORCHESTRATOR,
     to: CHAIN,
+    lane,
     summary: `ERC-8004 lookup — ${agent.identifier}`,
     payload: { identifier: agent.identifier },
   });
@@ -184,6 +191,7 @@ async function checkChainEligibility(agent: DiscoveredAgent): Promise<boolean> {
       type: ok ? 'chain' : 'error',
       from: CHAIN,
       to: ORCHESTRATOR,
+      lane,
       summary: entry.registered
         ? `agentId #${entry.agentId}, validation score ${score} — ${ok ? 'eligible' : `below threshold ${MIN_VALIDATION_SCORE}, refusing`}`
         : 'not registered in Identity registry — refusing',
@@ -195,6 +203,7 @@ async function checkChainEligibility(agent: DiscoveredAgent): Promise<boolean> {
       type: 'error',
       from: CHAIN,
       to: ORCHESTRATOR,
+      lane,
       summary: `chain lookup failed — ${e instanceof Error ? e.message : String(e)}`,
       payload: {},
     });
@@ -211,17 +220,18 @@ interface PricedQuote {
  * x402 phase 1: the initial (unpaid) request. The resource answers 402 with
  * its payment requirements, which we read from the response body.
  */
-async function fetchPaymentQuote(agent: DiscoveredAgent, jsonrpcUrl: string): Promise<PricedQuote | undefined> {
+async function fetchPaymentQuote(agent: DiscoveredAgent, jsonrpcUrl: string, lane: string): Promise<PricedQuote | undefined> {
   traceBus.push({
     type: 'pay',
     from: ORCHESTRATOR,
     to: agent.displayName,
+    lane,
     summary: 'A2A call without payment — expecting 402 quote',
     payload: { url: jsonrpcUrl },
   });
   const res = await fetch(jsonrpcUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Sim-From': ORCHESTRATOR, 'X-Sim-Lane': lane },
     body: JSON.stringify({ jsonrpc: '2.0', id: 'x402-probe', method: 'message/send', params: {} }),
   });
   if (res.status !== 402) return undefined; // free resource — no quote
@@ -234,11 +244,12 @@ async function fetchPaymentQuote(agent: DiscoveredAgent, jsonrpcUrl: string): Pr
 }
 
 /** x402 phase 2 (direct mode): settle a policy-wallet transfer, get a receipt. */
-async function payDirect(agent: DiscoveredAgent, quote: PricedQuote): Promise<string> {
+async function payDirect(agent: DiscoveredAgent, quote: PricedQuote, lane: string): Promise<string> {
   traceBus.push({
     type: 'pay',
     from: ORCHESTRATOR,
     to: CHAIN,
+    lane,
     summary: `transfer ${quote.amount} USDC → ${quote.payTo} (policy wallet check)`,
     payload: { from: ORCH_WALLET, ...quote },
   });
@@ -258,6 +269,7 @@ async function payDirect(agent: DiscoveredAgent, quote: PricedQuote): Promise<st
       type: 'error',
       from: CHAIN,
       to: ORCHESTRATOR,
+      lane,
       summary: `transfer REJECTED — ${body.error}`,
       payload: body,
     });
@@ -267,6 +279,7 @@ async function payDirect(agent: DiscoveredAgent, quote: PricedQuote): Promise<st
     type: 'pay',
     from: CHAIN,
     to: ORCHESTRATOR,
+    lane,
     summary: `tx ${body.id} settled — ${quote.amount} USDC → ${quote.payTo}`,
     payload: body,
   });
@@ -274,11 +287,12 @@ async function payDirect(agent: DiscoveredAgent, quote: PricedQuote): Promise<st
 }
 
 /** ERC-8183 alternative: fund an escrow instead of paying up front. */
-async function fundEscrow(agent: DiscoveredAgent, quote: PricedQuote, jobRef: string): Promise<string> {
+async function fundEscrow(agent: DiscoveredAgent, quote: PricedQuote, jobRef: string, lane: string): Promise<string> {
   traceBus.push({
     type: 'pay',
     from: ORCHESTRATOR,
     to: CHAIN,
+    lane,
     summary: `fund escrow ${quote.amount} USDC for ${agent.displayName} (ERC-8183)`,
     payload: { provider: quote.payTo, amount: quote.amount, jobRef },
   });
@@ -293,6 +307,7 @@ async function fundEscrow(agent: DiscoveredAgent, quote: PricedQuote, jobRef: st
       type: 'error',
       from: CHAIN,
       to: ORCHESTRATOR,
+      lane,
       summary: `escrow funding REJECTED — ${body.error}`,
       payload: body,
     });
@@ -302,6 +317,7 @@ async function fundEscrow(agent: DiscoveredAgent, quote: PricedQuote, jobRef: st
     type: 'pay',
     from: CHAIN,
     to: ORCHESTRATOR,
+    lane,
     summary: `escrow ${body.id} funded — ${quote.amount} USDC locked`,
     payload: body,
   });
@@ -309,11 +325,12 @@ async function fundEscrow(agent: DiscoveredAgent, quote: PricedQuote, jobRef: st
 }
 
 /** ERC-8183 evaluator attestation: release on verified delivery, refund on failure. */
-async function attestEscrow(escrowId: string, pass: boolean, provider: string): Promise<void> {
+async function attestEscrow(escrowId: string, pass: boolean, provider: string, lane: string): Promise<void> {
   traceBus.push({
     type: 'pay',
     from: ORCHESTRATOR,
     to: CHAIN,
+    lane,
     summary: `evaluator attestation: ${pass ? 'PASS — release escrow to' : 'FAIL — refund escrow from'} ${provider}`,
     payload: { escrowId, verdict: pass ? 'pass' : 'fail' },
   });
@@ -328,6 +345,7 @@ async function attestEscrow(escrowId: string, pass: boolean, provider: string): 
     type: 'pay',
     from: CHAIN,
     to: ORCHESTRATOR,
+    lane,
     summary: `escrow ${escrowId} ${body.status}`,
     payload: body,
   });
@@ -335,13 +353,14 @@ async function attestEscrow(escrowId: string, pass: boolean, provider: string): 
 
 /** Injects the X-PAYMENT receipt header into the next A2A call (x402 phase 3). */
 class PaymentInterceptor implements CallInterceptor {
-  constructor(private readonly holder: { receipt?: string }) {}
+  constructor(private readonly holder: { receipt?: string; lane?: string }) {}
   before(args: BeforeArgs): Promise<void> {
     args.options = {
       ...args.options,
       serviceParameters: {
         ...args.options?.serviceParameters,
         ...(this.holder.receipt ? { 'X-PAYMENT': this.holder.receipt } : {}),
+        ...(this.holder.lane ? { 'X-Sim-Lane': this.holder.lane } : {}),
         'X-Sim-From': ORCHESTRATOR,
       },
     };
@@ -354,12 +373,12 @@ class PaymentInterceptor implements CallInterceptor {
 
 interface PaidClient {
   client: Client;
-  holder: { receipt?: string };
+  holder: { receipt?: string; lane?: string };
 }
 
 const clientCache = new Map<string, Promise<PaidClient>>();
 
-function getClient(agent: DiscoveredAgent): Promise<PaidClient> {
+function getClient(agent: DiscoveredAgent, lane: string): Promise<PaidClient> {
   let cached = clientCache.get(agent.url);
   if (!cached) {
     cached = (async () => {
@@ -367,6 +386,7 @@ function getClient(agent: DiscoveredAgent): Promise<PaidClient> {
         type: 'discovery',
         from: ORCHESTRATOR,
         to: agent.displayName,
+        lane,
         summary: `GET Agent Card ${agent.url.replace(/^https?:\/\/[^/]+/, '')}`,
         payload: { url: agent.url },
       });
@@ -375,12 +395,13 @@ function getClient(agent: DiscoveredAgent): Promise<PaidClient> {
         type: 'discovery',
         from: agent.displayName,
         to: ORCHESTRATOR,
+        lane,
         summary: `Agent Card received — ${card.name} (A2A v${card.protocolVersion}, ${card.url})`,
         payload: card,
       });
       // Card URL is <base>/.well-known/agent-card.json — client wants the base.
       const base = agent.url.replace(/\/\.well-known\/.*$/, '');
-      const holder: { receipt?: string } = {};
+      const holder: { receipt?: string; lane?: string } = {};
       const factory = new ClientFactory(
         ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
           clientConfig: { interceptors: [new PaymentInterceptor(holder)] },
@@ -402,33 +423,33 @@ function getClient(agent: DiscoveredAgent): Promise<PaidClient> {
  * Runs at full speed — readable pacing is the UI's job (playback queue), not the
  * protocol's.
  */
-async function delegate(intent: Intent, payMode: PayMode): Promise<string> {
+async function delegate(intent: Intent, payMode: PayMode, lane: string): Promise<string> {
   try {
-    const agent = await discoverAgent(intent);
+    const agent = await discoverAgent(intent, lane);
     if (!agent) {
       return `⚠️ intent "${intent.intent}": no agent found in the ARD Registry (was it unregistered?)`;
     }
-    if (!(await verifyTrust(agent))) {
+    if (!(await verifyTrust(agent, lane))) {
       return `⚠️ ${agent.displayName}: refusing to connect — trust verification failed`;
     }
-    if (!(await checkChainEligibility(agent))) {
+    if (!(await checkChainEligibility(agent, lane))) {
       return `⚠️ ${agent.displayName}: on-chain eligibility failed (unregistered or validation score < ${MIN_VALIDATION_SCORE})`;
     }
 
-    const { client, holder } = await getClient(agent);
+    const { client, holder } = await getClient(agent, lane);
 
     // x402: unpaid probe → 402 quote → settle → retry with X-PAYMENT receipt.
     const base = agent.url.replace(/\/\.well-known\/.*$/, '');
-    const quote = await fetchPaymentQuote(agent, `${base}/a2a/jsonrpc`);
+    const quote = await fetchPaymentQuote(agent, `${base}/a2a/jsonrpc`, lane);
     let escrowId: string | undefined;
     let paidNote = 'free';
     if (quote) {
       if (payMode === 'escrow') {
-        escrowId = await fundEscrow(agent, quote, `intent:${intent.intent}`);
+        escrowId = await fundEscrow(agent, quote, `intent:${intent.intent}`, lane);
         holder.receipt = `escrow:${escrowId}`;
         paidNote = `escrow ${quote.amount} USDC`;
       } else {
-        holder.receipt = await payDirect(agent, quote);
+        holder.receipt = await payDirect(agent, quote, lane);
         paidNote = `paid ${quote.amount} USDC`;
       }
     }
@@ -436,13 +457,14 @@ async function delegate(intent: Intent, payMode: PayMode): Promise<string> {
     let failure: string | undefined;
     const artifacts: string[] = [];
     try {
+      holder.lane = lane;
       const stream = client.sendMessageStream({
         message: {
           kind: 'message',
           messageId: uuidv4(),
           role: 'user',
           parts: [{ kind: 'text', text: intent.input }],
-          metadata: { simFrom: ORCHESTRATOR },
+          metadata: { simFrom: ORCHESTRATOR, simLane: lane },
         },
       });
       for await (const event of stream) {
@@ -454,12 +476,13 @@ async function delegate(intent: Intent, payMode: PayMode): Promise<string> {
       }
     } finally {
       holder.receipt = undefined;
+      holder.lane = undefined;
     }
 
     // ERC-8183: the evaluator (here: the orchestrator itself) attests delivery.
     if (escrowId && quote) {
       const delivered = !failure && artifacts.some(Boolean);
-      await attestEscrow(escrowId, delivered, quote.payTo);
+      await attestEscrow(escrowId, delivered, quote.payTo, lane);
       paidNote = delivered ? `escrow ${quote.amount} USDC released` : `escrow ${quote.amount} USDC refunded`;
     }
 
@@ -514,7 +537,11 @@ class OrchestratorExecutor implements AgentExecutor {
     });
 
     const payMode: PayMode = userMessage.metadata?.payMode === 'escrow' ? 'escrow' : 'direct';
-    const results = await Promise.all(intents.map((i) => delegate(i, payMode)));
+    // Each intent pipeline is its own causal lane — they genuinely run in
+    // parallel, and only cross-lane events may render as simultaneous.
+    const results = await Promise.all(
+      intents.map((i) => delegate(i, payMode, `intent:${taskId.slice(0, 8)}:${i.intent}`))
+    );
 
     eventBus.publish({
       kind: 'status-update',

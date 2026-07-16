@@ -27,6 +27,9 @@ export const textOf = (message: Message | undefined): string => partsText(messag
 export const senderOf = (message: Message | undefined): string =>
   typeof message?.metadata?.simFrom === 'string' ? message.metadata.simFrom : 'User';
 
+export const laneOf = (message: Message | undefined): string | undefined =>
+  typeof message?.metadata?.simLane === 'string' ? message.metadata.simLane : undefined;
+
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** Wraps an executor so every inbound message and published event lands on the trace bus. */
@@ -38,6 +41,9 @@ class TracingExecutor implements AgentExecutor {
 
   async execute(ctx: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
     const from = senderOf(ctx.userMessage);
+    // Everything this task does belongs to one causal chain: the caller's lane
+    // if it provided one, otherwise this task's own lane.
+    const lane = laneOf(ctx.userMessage) ?? `${this.agentName}:${ctx.taskId}`;
     traceBus.push({
       type: 'request',
       from,
@@ -45,6 +51,7 @@ class TracingExecutor implements AgentExecutor {
       summary: `message/send: "${textOf(ctx.userMessage)}"`,
       taskId: ctx.taskId,
       contextId: ctx.contextId,
+      lane,
       payload: ctx.userMessage,
     });
 
@@ -59,6 +66,7 @@ class TracingExecutor implements AgentExecutor {
             summary: `Task created (${event.status.state})`,
             taskId: event.id,
             contextId: event.contextId,
+            lane,
             payload: event,
           });
         } else if (event.kind === 'status-update') {
@@ -69,6 +77,7 @@ class TracingExecutor implements AgentExecutor {
             summary: `state: ${event.status.state}${textOf(event.status.message) ? ` — ${textOf(event.status.message)}` : ''}`,
             taskId: event.taskId,
             contextId: event.contextId,
+            lane,
             payload: event,
           });
         } else if (event.kind === 'artifact-update') {
@@ -79,6 +88,7 @@ class TracingExecutor implements AgentExecutor {
             summary: `Artifact: ${event.artifact.name ?? event.artifact.artifactId}`,
             taskId: event.taskId,
             contextId: event.contextId,
+            lane,
             payload: event,
           });
         } else if (event.kind === 'message') {
@@ -88,6 +98,7 @@ class TracingExecutor implements AgentExecutor {
             to: from,
             summary: `reply: "${textOf(event)}"`,
             contextId: event.contextId,
+            lane,
             payload: event,
           });
         }
@@ -236,11 +247,13 @@ function paymentGate(def: AgentDefinition): express.RequestHandler {
   return async (req, res, next) => {
     const payment = req.header('x-payment');
     const payer = req.header('x-sim-from') ?? 'Orchestrator Agent';
+    const lane = req.header('x-sim-lane');
     if (!payment) {
       traceBus.push({
         type: 'pay',
         from: def.name,
         to: payer,
+        lane,
         summary: `402 Payment Required — ${def.price} USDC to ${payTo}`,
         payload: {
           x402Version: 1,
@@ -281,6 +294,7 @@ function paymentGate(def: AgentDefinition): express.RequestHandler {
       type: 'chain',
       from: def.name,
       to: CHAIN,
+      lane,
       summary: `verify ${isEscrow ? 'escrow' : 'payment receipt'} ${payment.slice(0, 16)}…`,
       payload: { verifyUrl },
     });
@@ -290,6 +304,7 @@ function paymentGate(def: AgentDefinition): express.RequestHandler {
         type: verdict.valid ? 'chain' : 'error',
         from: CHAIN,
         to: def.name,
+        lane,
         summary: verdict.valid
           ? `${isEscrow ? 'escrow' : 'receipt'} valid — ${def.price} USDC covered`
           : `payment invalid — ${verdict.reason}`,
