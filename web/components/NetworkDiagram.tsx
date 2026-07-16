@@ -22,11 +22,12 @@ const NODES = [
 // plane: 'a2a' = solid data plane, 'ard' = dashed discovery plane,
 // 'chain' = dotted settlement plane.
 // bend: quadratic control-point offset along the left normal of a→b (0 = straight).
+// Note: UI admin operations (registration toggles, cap/score changes) also hit
+// the registry and the chain, but they are out-of-band simulator controls, not
+// protocol traffic — they appear in the log and flash the nodes, with no edge.
 const EDGES = [
   // consumer side
   { a: 'User', b: 'Orchestrator Agent', plane: 'a2a', bend: 0 },
-  { a: 'User', b: 'ARD Registry', plane: 'ard', bend: -18 }, // arcs over the orchestrator (UI admin ops)
-  { a: 'User', b: 'Chain', plane: 'chain', bend: 18 }, // arcs under the orchestrator (caps / validation)
   // orchestrator → mediating infrastructure
   { a: 'Orchestrator Agent', b: 'ARD Registry', plane: 'ard', bend: 0 },
   { a: 'Orchestrator Agent', b: 'Chain', plane: 'chain', bend: 0 },
