@@ -34,8 +34,9 @@ Gateway ──A2A──▶ Orchestrator Agent (:41240)   │ crawls /.well-known
 
 ### Settlement layer (real contracts on a local EVM)
 
-Four Solidity contracts (`contracts/`), compiled with Hardhat and deployed automatically to a
-local `hardhat node` at startup. Unit tests: `npm run test:contracts`.
+Four Solidity contracts (`contracts/`, solc 0.8.36), compiled with **Hardhat 3** and deployed
+automatically to a local `hardhat node` at startup. Unit tests (mocha + ethers v6 + HH3 chai
+matchers): `npm run test:contracts`.
 
 - **`SimUSDC.sol`** — minimal ERC-20 stablecoin (6 decimals)
 - **`PolicyWallet.sol`** (ERC-8196/4337-style) — holds the orchestrator's USDC; `pay()` and

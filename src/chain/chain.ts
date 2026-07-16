@@ -107,8 +107,8 @@ async function bootEvm(): Promise<Deployed> {
 
   console.log(`  ⛓  starting local EVM (hardhat node :${PORTS.evm})...`);
   const logStream = createWriteStream(path.join(appRoot, '.hardhat-node.log'));
-  // CHOKIDAR_USEPOLLING: hardhat node's compiler-output watcher crashes with
-  // EMFILE on macOS FSEvents; polling sidesteps it.
+  // CHOKIDAR_USEPOLLING: hardhat 2's compiler-output watcher crashed with EMFILE
+  // on macOS FSEvents; harmless under hardhat 3, kept as a safeguard.
   evmChild = spawn('npx', ['hardhat', 'node', '--port', String(PORTS.evm)], {
     cwd: appRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
