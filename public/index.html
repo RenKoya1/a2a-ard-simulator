@@ -188,6 +188,12 @@
   .entry summary { list-style: none; cursor: pointer; padding: 6px 9px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .entry summary::-webkit-details-marker { display: none; }
   .badge { font-size: 9px; font-weight: 700; letter-spacing: .5px; color: var(--type-color); min-width: 62px; }
+  .delta {
+    font-size: 9px; min-width: 52px; text-align: right; color: var(--muted);
+    font-variant-numeric: tabular-nums; flex: none;
+  }
+  .delta.concurrent { color: var(--c-pay); font-weight: 700; }
+  .delta.first { color: var(--accent); font-weight: 700; }
   .route { color: var(--muted); font-size: 11px; white-space: nowrap; }
   .route b { color: var(--text); font-weight: 600; }
   .summary-text { flex: 1 1 100%; color: var(--text); line-height: 1.45; }
@@ -283,29 +289,43 @@ const TYPE_META = {
   response:  { label: 'RESPONSE',  color: 'var(--c-response)' },
   error:     { label: 'ERROR',     color: 'var(--c-error)' },
 };
+// Layout mirrors the architecture's three planes: the discovery hub (ARD), the
+// data-plane hub (Orchestrator), and the settlement hub (Chain) sit in one
+// column, each facing the worker column. Every edge is real traffic.
 const NODES = [
-  { id: 'User',               label: '👤 User',        role: 'browser UI',        x: 90,  y: 175 },
-  { id: 'Chain',              label: '⛓️ Chain',        role: 'settlement layer',  x: 90,  y: 50 },
-  { id: 'ARD Registry',       label: '📇 ARD Registry', role: 'discovery layer',   x: 400, y: 50 },
-  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A router',        x: 400, y: 175 },
-  { id: 'Translator Agent',   label: '🌐 Translator',   role: 'translation agent', x: 780, y: 50 },
-  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: 'calculator agent',  x: 780, y: 150 },
-  { id: 'Weather Agent',      label: '⛅ Weather',      role: 'weather agent',     x: 780, y: 228 },
+  { id: 'User',               label: '👤 User',        role: 'browser UI',        x: 90,  y: 130 },
+  { id: 'ARD Registry',       label: '📇 ARD Registry', role: 'discovery layer',   x: 430, y: 45 },
+  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A router',        x: 430, y: 130 },
+  { id: 'Chain',              label: '⛓️ Chain',        role: 'settlement layer',  x: 430, y: 215 },
+  { id: 'Translator Agent',   label: '🌐 Translator',   role: 'translation agent', x: 780, y: 45 },
+  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: 'calculator agent',  x: 780, y: 130 },
+  { id: 'Weather Agent',      label: '⛅ Weather',      role: 'weather agent',     x: 780, y: 215 },
 ];
-// plane: 'a2a' = solid data-plane edge, 'ard' = dashed discovery-plane edge.
+// plane: 'a2a' = solid data plane (straight), 'ard' = dashed discovery plane
+// (bows up), 'chain' = dotted settlement plane (bows down). Consistent bend
+// direction per plane keeps the weave readable where lines must cross.
 // bend: quadratic control-point offset along the left normal of a→b (0 = straight).
 const EDGES = [
+  // user ↔ hubs
   { a: 'User', b: 'Orchestrator Agent', plane: 'a2a', bend: 0 },
-  { a: 'User', b: 'Chain', plane: 'chain', bend: 0 },
-  { a: 'Chain', b: 'Orchestrator Agent', plane: 'chain', bend: -25 },
-  { a: 'User', b: 'ARD Registry', plane: 'ard', bend: 25 },
+  { a: 'User', b: 'ARD Registry', plane: 'ard', bend: -16 },
+  { a: 'User', b: 'Chain', plane: 'chain', bend: 16 },
+  // hub ↔ hub (search + payments/eligibility)
   { a: 'Orchestrator Agent', b: 'ARD Registry', plane: 'ard', bend: 0 },
-  { a: 'ARD Registry', b: 'Translator Agent', plane: 'ard', bend: -18 },
-  { a: 'ARD Registry', b: 'Calculator Agent', plane: 'ard', bend: -45 },
-  { a: 'ARD Registry', b: 'Weather Agent', plane: 'ard', bend: -70 },
-  { a: 'Orchestrator Agent', b: 'Translator Agent', plane: 'a2a', bend: -30 },
+  { a: 'Orchestrator Agent', b: 'Chain', plane: 'chain', bend: 0 },
+  // discovery plane: registry crawls the workers' catalogs
+  { a: 'ARD Registry', b: 'Translator Agent', plane: 'ard', bend: -16 },
+  { a: 'ARD Registry', b: 'Calculator Agent', plane: 'ard', bend: -16 },
+  { a: 'ARD Registry', b: 'Weather Agent', plane: 'ard', bend: -16 },
+  // data plane: attestation, agent card, A2A message/send
+  { a: 'Orchestrator Agent', b: 'Translator Agent', plane: 'a2a', bend: 0 },
   { a: 'Orchestrator Agent', b: 'Calculator Agent', plane: 'a2a', bend: 0 },
-  { a: 'Orchestrator Agent', b: 'Weather Agent', plane: 'a2a', bend: 20 },
+  { a: 'Orchestrator Agent', b: 'Weather Agent', plane: 'a2a', bend: 0 },
+  // settlement plane: workers verify + consume payment receipts on chain,
+  // and register their ERC-8004 identity at boot
+  { a: 'Chain', b: 'Translator Agent', plane: 'chain', bend: 16 },
+  { a: 'Chain', b: 'Calculator Agent', plane: 'chain', bend: 16 },
+  { a: 'Chain', b: 'Weather Agent', plane: 'chain', bend: 16 },
 ];
 const SCENARIOS = [
   'translate hello world',
@@ -427,6 +447,22 @@ function buildFilters() {
     wrap.appendChild(b);
   }
 }
+const fmtClock = (ts) => {
+  const d = new Date(ts);
+  return d.toLocaleTimeString('en-GB') + '.' + String(d.getMilliseconds()).padStart(3, '0');
+};
+const CONCURRENT_MS = 40; // events closer than this happened together (same burst)
+let lastLogTs = null;
+function deltaChip(ts) {
+  const t = new Date(ts).getTime();
+  const prev = lastLogTs;
+  lastLogTs = t;
+  if (prev === null) return '<span class="delta first">t₀</span>';
+  const d = t - prev;
+  if (d < CONCURRENT_MS) return '<span class="delta concurrent" title="happened in the same instant (parallel)">∥ +' + d + 'ms</span>';
+  if (d < 1000) return `<span class="delta">+${d}ms</span>`;
+  return `<span class="delta">+${(d / 1000).toFixed(2)}s</span>`;
+}
 function addLogEntry(ev) {
   const meta = TYPE_META[ev.type] ?? TYPE_META.request;
   const list = $('#log-list');
@@ -438,9 +474,10 @@ function addLogEntry(ev) {
   if (!activeFilters.has(ev.type)) el.style.display = 'none';
   el.innerHTML = `
     <summary>
+      ${deltaChip(ev.ts)}
       <span class="badge">${meta.label}</span>
       <span class="route"><b>${esc(ev.from)}</b> → <b>${esc(ev.to)}</b></span>
-      <span class="time">${new Date(ev.ts).toLocaleTimeString('en-GB')}${ev.taskId ? ' ・ task:' + esc(ev.taskId.slice(0, 8)) : ''}</span>
+      <span class="time">${fmtClock(ev.ts)}${ev.taskId ? ' ・ task:' + esc(ev.taskId.slice(0, 8)) : ''}</span>
       <span class="summary-text">${esc(ev.summary)}</span>
     </summary>
     <pre>${esc(JSON.stringify(ev.payload ?? {}, null, 2))}</pre>`;
@@ -454,7 +491,8 @@ let contextId;
 function addMessage(role, text, opts = {}) {
   const el = document.createElement('div');
   el.className = `msg ${role}${opts.error ? ' error' : ''}`;
-  el.innerHTML = `<div class="who">${role === 'user' ? 'User' : 'Orchestrator Agent'}</div>${esc(text)}` +
+  const clock = new Date().toLocaleTimeString('en-GB');
+  el.innerHTML = `<div class="who">${role === 'user' ? 'User' : 'Orchestrator Agent'} ・ ${clock}</div>${esc(text)}` +
     (opts.state ? `<div class="state">task state: ${esc(opts.state)}${opts.taskId ? ' ・ ' + esc(opts.taskId.slice(0, 8)) : ''}</div>` : '');
   $('#messages').appendChild(el);
   $('#messages').scrollTop = $('#messages').scrollHeight;
@@ -577,12 +615,17 @@ async function loadChain() {
   }
 }
 
-/* ---------- SSE + playback queue ----------
-   The backend runs at full speed and stamps true timestamps; bursts of events
-   are re-paced here, in the renderer, so the animation stays readable without
-   polluting the protocol code with sleeps. Order is always preserved. */
+/* ---------- SSE + timeline-faithful playback ----------
+   The backend runs at full speed and stamps true timestamps. The renderer
+   replays events preserving their REAL time relationships:
+   - events within CONCURRENT_MS of each other happened together (e.g. a
+     parallel fan-out) → rendered in the same frame, marked ∥ in the log
+   - sequential events are spaced by their actual gap (clamped to stay
+     watchable), so "search, THEN verify, THEN pay" reads as a sequence
+   Order is always preserved exactly as emitted. */
 const playQueue = [];
 let playing = false;
+const evTime = (ev) => new Date(ev.ts).getTime();
 function pump() {
   if (playing) return;
   const ev = playQueue.shift();
@@ -590,12 +633,24 @@ function pump() {
   playing = true;
   addLogEntry(ev);
   flashTrace(ev);
-  const gap = playQueue.length > 10 ? 120 : 340; // catch up when a burst backs up
+  // Drain everything that happened in the same instant — truly simultaneous,
+  // so it renders simultaneously.
+  while (playQueue.length && evTime(playQueue[0]) - evTime(ev) < CONCURRENT_MS) {
+    const sib = playQueue.shift();
+    addLogEntry(sib);
+    flashTrace(sib);
+  }
+  let gap = 0;
+  if (playQueue.length) {
+    const real = evTime(playQueue[0]) - evTime(ev);
+    gap = Math.min(Math.max(real, 120), 1500); // faithful, but clamped watchable
+    if (playQueue.length > 20) gap = Math.min(gap, 100); // catch up on deep backlog
+  }
   setTimeout(() => { playing = false; pump(); }, gap);
 }
 function enqueue(ev) {
   // History replayed on (re)connect: render instantly, no animation.
-  if (Date.now() - new Date(ev.ts).getTime() > 3000) {
+  if (Date.now() - evTime(ev) > 3000) {
     addLogEntry(ev);
     return;
   }
