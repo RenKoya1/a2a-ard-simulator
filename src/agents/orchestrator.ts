@@ -376,43 +376,37 @@ interface PaidClient {
   holder: { receipt?: string; lane?: string };
 }
 
-const clientCache = new Map<string, Promise<PaidClient>>();
-
-function getClient(agent: DiscoveredAgent, lane: string): Promise<PaidClient> {
-  let cached = clientCache.get(agent.url);
-  if (!cached) {
-    cached = (async () => {
-      traceBus.push({
-        type: 'discovery',
-        from: ORCHESTRATOR,
-        to: agent.displayName,
-        lane,
-        summary: `GET Agent Card ${agent.url.replace(/^https?:\/\/[^/]+/, '')}`,
-        payload: { url: agent.url },
-      });
-      const card = await (await fetch(agent.url)).json();
-      traceBus.push({
-        type: 'discovery',
-        from: agent.displayName,
-        to: ORCHESTRATOR,
-        lane,
-        summary: `Agent Card received — ${card.name} (A2A v${card.protocolVersion}, ${card.url})`,
-        payload: card,
-      });
-      // Card URL is <base>/.well-known/agent-card.json — client wants the base.
-      const base = agent.url.replace(/\/\.well-known\/.*$/, '');
-      const holder: { receipt?: string; lane?: string } = {};
-      const factory = new ClientFactory(
-        ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
-          clientConfig: { interceptors: [new PaymentInterceptor(holder)] },
-        })
-      );
-      return { client: await factory.createFromUrl(base), holder };
-    })();
-    clientCache.set(agent.url, cached);
-    cached.catch(() => clientCache.delete(agent.url));
-  }
-  return cached;
+// No client cache, deliberately: every delegation runs the visible full
+// pipeline (the agent-card fetch is part of the story this simulator tells),
+// and each delegation gets its own receipt/lane holder — a shared client
+// would let parallel intents to the same agent clobber each other's receipt.
+async function getClient(agent: DiscoveredAgent, lane: string): Promise<PaidClient> {
+  traceBus.push({
+    type: 'discovery',
+    from: ORCHESTRATOR,
+    to: agent.displayName,
+    lane,
+    summary: `GET Agent Card ${agent.url.replace(/^https?:\/\/[^/]+/, '')}`,
+    payload: { url: agent.url },
+  });
+  const card = await (await fetch(agent.url)).json();
+  traceBus.push({
+    type: 'discovery',
+    from: agent.displayName,
+    to: ORCHESTRATOR,
+    lane,
+    summary: `Agent Card received — ${card.name} (A2A v${card.protocolVersion}, ${card.url})`,
+    payload: card,
+  });
+  // Card URL is <base>/.well-known/agent-card.json — client wants the base.
+  const base = agent.url.replace(/\/\.well-known\/.*$/, '');
+  const holder: { receipt?: string; lane?: string } = {};
+  const factory = new ClientFactory(
+    ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
+      clientConfig: { interceptors: [new PaymentInterceptor(holder)] },
+    })
+  );
+  return { client: await factory.createFromUrl(base), holder };
 }
 
 /**

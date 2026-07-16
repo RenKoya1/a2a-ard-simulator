@@ -287,6 +287,16 @@ function paymentGate(def: AgentDefinition): express.RequestHandler {
       return;
     }
     const isEscrow = payment.startsWith('escrow:');
+    // The paid retry leg, logged on arrival — BEFORE receipt verification, so
+    // the trace preserves wire order (retry arrives → verify → handler runs).
+    traceBus.push({
+      type: 'pay',
+      from: payer,
+      to: def.name,
+      lane,
+      summary: `A2A retry with X-PAYMENT ${isEscrow ? 'escrow' : 'receipt'} ${payment.slice(0, 16)}…`,
+      payload: { xPayment: payment },
+    });
     const verifyUrl = isEscrow
       ? `${chainUrl()}/verify-escrow?id=${payment.slice(7)}&provider=${payTo}&min=${def.price}`
       : `${chainUrl()}/verify-tx?tx=${payment}&to=${payTo}&min=${def.price}`;
