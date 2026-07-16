@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events';
 
 export type TraceType =
   | 'ard' // ARD registry: catalog crawl / search
+  | 'pay' // x402 payment flow: 402 quote, transfer, receipt
+  | 'chain' // mock chain: ERC-8004 registries, policy wallet, escrow
   | 'verify' // ARD trust manifest verification
   | 'discovery' // agent card fetch
   | 'request' // message/send arriving at an agent

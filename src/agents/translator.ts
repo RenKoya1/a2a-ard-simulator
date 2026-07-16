@@ -56,6 +56,7 @@ export const translatorAgent: AgentDefinition = {
   slug: 'translator',
   description: 'Mock dictionary-based Japanese/English translator agent',
   port: PORTS.translator,
+  price: 0.05,
   discoveryQueries: [
     'translate text between japanese and english',
     'translate hello world to japanese',

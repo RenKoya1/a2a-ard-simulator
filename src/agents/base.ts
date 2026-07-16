@@ -13,6 +13,7 @@ import { agentCardHandler, jsonRpcHandler, UserBuilder } from '@a2a-js/sdk/serve
 import { traceBus } from '../trace.js';
 import { agentUrl } from '../config.js';
 import { AI_CATALOG_PATH, buildCatalog } from '../ard/catalog.js';
+import { CHAIN, chainUrl } from '../chain/chain.js';
 
 export const partsText = (parts: Message['parts'] | undefined): string =>
   (parts ?? [])
@@ -217,7 +218,92 @@ export interface AgentDefinition {
   skills: AgentCard['skills'];
   /** representativeQueries published in the ARD catalog entry — what this agent is "for". */
   discoveryQueries: string[];
+  /** x402 price per A2A call in USDC; 0 = free (no payment gate). */
+  price: number;
   executor: AgentExecutor;
+}
+
+export const walletOf = (slug: string): string => `wallet:${slug}`;
+
+/**
+ * x402-style payment gate in front of the A2A endpoint. Without a valid
+ * X-PAYMENT header the request is answered with 402 + payment requirements;
+ * with one, the receipt (tx or escrow) is verified against the chain before
+ * the A2A handler runs. Direct-pay receipts are consumed on use (replay guard).
+ */
+function paymentGate(def: AgentDefinition): express.RequestHandler {
+  const payTo = walletOf(def.slug);
+  return async (req, res, next) => {
+    const payment = req.header('x-payment');
+    const payer = req.header('x-sim-from') ?? 'Orchestrator Agent';
+    if (!payment) {
+      traceBus.push({
+        type: 'pay',
+        from: def.name,
+        to: payer,
+        summary: `402 Payment Required — ${def.price} USDC to ${payTo}`,
+        payload: {
+          x402Version: 1,
+          error: 'X-PAYMENT header is required',
+          accepts: [
+            {
+              scheme: 'exact',
+              network: 'sim-chain',
+              asset: 'USDC',
+              maxAmountRequired: String(def.price),
+              payTo,
+              resource: '/a2a/jsonrpc',
+            },
+          ],
+        },
+      });
+      res.status(402).json({
+        x402Version: 1,
+        error: 'X-PAYMENT header is required',
+        accepts: [
+          {
+            scheme: 'exact',
+            network: 'sim-chain',
+            asset: 'USDC',
+            maxAmountRequired: String(def.price),
+            payTo,
+            resource: '/a2a/jsonrpc',
+          },
+        ],
+      });
+      return;
+    }
+    const isEscrow = payment.startsWith('escrow:');
+    const verifyUrl = isEscrow
+      ? `${chainUrl()}/verify-escrow?id=${payment.slice(7)}&provider=${payTo}&min=${def.price}`
+      : `${chainUrl()}/verify-tx?tx=${payment}&to=${payTo}&min=${def.price}`;
+    traceBus.push({
+      type: 'chain',
+      from: def.name,
+      to: CHAIN,
+      summary: `verify ${isEscrow ? 'escrow' : 'payment receipt'} ${payment.slice(0, 16)}…`,
+      payload: { verifyUrl },
+    });
+    try {
+      const verdict = (await (await fetch(verifyUrl)).json()) as { valid: boolean; reason?: string };
+      traceBus.push({
+        type: verdict.valid ? 'chain' : 'error',
+        from: CHAIN,
+        to: def.name,
+        summary: verdict.valid
+          ? `${isEscrow ? 'escrow' : 'receipt'} valid — ${def.price} USDC covered`
+          : `payment invalid — ${verdict.reason}`,
+        payload: verdict,
+      });
+      if (!verdict.valid) {
+        res.status(402).json({ x402Version: 1, error: `invalid payment: ${verdict.reason}` });
+        return;
+      }
+      next();
+    } catch (e) {
+      res.status(502).json({ error: `chain unreachable: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  };
 }
 
 export function buildCard(def: Pick<AgentDefinition, 'name' | 'description' | 'port' | 'skills'>): AgentCard {
@@ -247,6 +333,9 @@ export function startAgentServer(def: AgentDefinition): Promise<void> {
 
   const app = express();
   app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: requestHandler }));
+  if (def.price > 0) {
+    app.use('/a2a/jsonrpc', paymentGate(def));
+  }
   app.use('/a2a/jsonrpc', jsonRpcHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }));
   // ARD: publish this host's capability catalog for registry crawlers.
   app.get(`/${AI_CATALOG_PATH}`, (_req, res) => res.json(buildCatalog(def)));

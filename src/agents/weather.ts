@@ -58,6 +58,7 @@ export const weatherAgent: AgentDefinition = {
   slug: 'weather',
   description: 'Mock weather agent returning deterministic forecasts per city and date',
   port: PORTS.weather,
+  price: 0.1,
   discoveryQueries: [
     'weather forecast temperature for a city',
     'get today weather humidity in tokyo',

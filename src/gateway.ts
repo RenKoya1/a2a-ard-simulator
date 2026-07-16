@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ClientFactory, type Client } from '@a2a-js/sdk/client';
 import { PORTS, agentUrl } from './config.js';
 import { registryApiUrl } from './ard/registry.js';
+import { chainUrl } from './chain/chain.js';
 import { traceBus, type TraceEvent } from './trace.js';
 import { partsText } from './agents/base.js';
 import type { AgentDefinition } from './agents/base.js';
@@ -85,6 +86,39 @@ export function startGateway(agents: AgentDefinition[]): Promise<void> {
     }
   });
 
+  // Mock chain control plane, proxied for the UI.
+  app.get('/api/chain/state', async (_req, res) => {
+    try {
+      res.json(await (await fetch(`${chainUrl()}/state`)).json());
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+  app.post('/api/chain/policy', async (req, res) => {
+    try {
+      const upstream = await fetch(`${chainUrl()}/admin/policy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ perTxCap: req.body?.perTxCap, cumulativeCap: req.body?.cumulativeCap }),
+      });
+      res.status(upstream.status).json(await upstream.json());
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+  app.post('/api/chain/validation', async (req, res) => {
+    try {
+      const upstream = await fetch(`${chainUrl()}/admin/validation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: req.body?.identifier, score: req.body?.score }),
+      });
+      res.status(upstream.status).json(await upstream.json());
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
   // Live protocol trace via SSE (replays recent history on connect).
   app.get('/api/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -118,7 +152,10 @@ export function startGateway(agents: AgentDefinition[]): Promise<void> {
           role: 'user',
           parts: [{ kind: 'text', text }],
           contextId: typeof req.body?.contextId === 'string' ? req.body.contextId : undefined,
-          metadata: { simFrom: 'User' },
+          metadata: {
+            simFrom: 'User',
+            payMode: req.body?.payMode === 'escrow' ? 'escrow' : 'direct',
+          },
         },
       });
 

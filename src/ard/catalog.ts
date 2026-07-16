@@ -22,6 +22,7 @@ export interface CatalogEntry {
   representativeQueries?: string[];
   version?: string;
   updatedAt?: string;
+  metadata?: Record<string, unknown>;
   trustManifest?: TrustManifest;
 }
 
@@ -50,6 +51,9 @@ export function buildCatalog(def: AgentDefinition): AiCatalog {
         representativeQueries: def.discoveryQueries,
         version: '0.1.0',
         updatedAt: new Date().toISOString(),
+        metadata: {
+          pricing: { scheme: 'x402', pricePerCall: def.price, currency: 'USDC', payTo: `wallet:${def.slug}` },
+        },
         trustManifest: {
           identity: `spiffe://sim.local/agents/${def.slug}`,
           identityType: 'spiffe',

@@ -23,6 +23,7 @@ export const calculatorAgent: AgentDefinition = {
   slug: 'calculator',
   description: 'Arithmetic agent that evaluates basic math expressions',
   port: PORTS.calculator,
+  price: 0.02,
   discoveryQueries: [
     'evaluate arithmetic expression calculator math',
     'calculate a math formula with parentheses',
