@@ -4,44 +4,44 @@ import { useEffect, useRef } from 'react';
 import { TYPE_META, type TraceEvent } from '@/lib/protocol';
 import { traceFlash } from '@/lib/bus';
 
-// Layout mirrors the architecture's three planes: the discovery hub (ARD), the
-// data-plane hub (Orchestrator), and the settlement hub (Chain) sit in one
-// column, each facing the worker column. Every edge is real traffic.
+// Layout mirrors the mediation structure: ARD (discovery) and Chain
+// (settlement) are infrastructure BETWEEN the consumer side (User →
+// Orchestrator) and the provider side (workers) — the registry brokers who
+// gets found, the chain brokers how value moves. The direct A2A data plane
+// runs straight through the middle. Every edge is real traffic.
 const NODES = [
-  { id: 'User',               label: '👤 User',        role: 'browser UI',        x: 90,  y: 130 },
-  { id: 'ARD Registry',       label: '📇 ARD Registry', role: 'discovery layer',   x: 430, y: 45 },
-  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A router',        x: 430, y: 130 },
-  { id: 'Chain',              label: '⛓️ Chain',        role: 'settlement layer',  x: 430, y: 215 },
-  { id: 'Translator Agent',   label: '🌐 Translator',   role: 'translation agent', x: 780, y: 45 },
-  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: 'calculator agent',  x: 780, y: 130 },
-  { id: 'Weather Agent',      label: '⛅ Weather',      role: 'weather agent',     x: 780, y: 215 },
+  { id: 'User',               label: '👤 User',        role: 'browser UI',        x: 85,  y: 130 },
+  { id: 'Orchestrator Agent', label: '🧭 Orchestrator', role: 'A2A router',        x: 315, y: 130 },
+  { id: 'ARD Registry',       label: '📇 ARD Registry', role: 'discovery layer',   x: 550, y: 45 },
+  { id: 'Chain',              label: '⛓️ Chain',        role: 'settlement layer',  x: 550, y: 215 },
+  { id: 'Translator Agent',   label: '🌐 Translator',   role: 'translation agent', x: 795, y: 45 },
+  { id: 'Calculator Agent',   label: '🧮 Calculator',   role: 'calculator agent',  x: 795, y: 130 },
+  { id: 'Weather Agent',      label: '⛅ Weather',      role: 'weather agent',     x: 795, y: 215 },
 ] as const;
 
-// plane: 'a2a' = solid data plane (straight), 'ard' = dashed discovery plane
-// (bows up), 'chain' = dotted settlement plane (bows down). Consistent bend
-// direction per plane keeps the weave readable where lines must cross.
+// plane: 'a2a' = solid data plane, 'ard' = dashed discovery plane,
+// 'chain' = dotted settlement plane.
 // bend: quadratic control-point offset along the left normal of a→b (0 = straight).
 const EDGES = [
-  // user ↔ hubs
+  // consumer side
   { a: 'User', b: 'Orchestrator Agent', plane: 'a2a', bend: 0 },
-  { a: 'User', b: 'ARD Registry', plane: 'ard', bend: -16 },
-  { a: 'User', b: 'Chain', plane: 'chain', bend: 16 },
-  // hub ↔ hub (search + payments/eligibility)
+  { a: 'User', b: 'ARD Registry', plane: 'ard', bend: -18 }, // arcs over the orchestrator (UI admin ops)
+  { a: 'User', b: 'Chain', plane: 'chain', bend: 18 }, // arcs under the orchestrator (caps / validation)
+  // orchestrator → mediating infrastructure
   { a: 'Orchestrator Agent', b: 'ARD Registry', plane: 'ard', bend: 0 },
   { a: 'Orchestrator Agent', b: 'Chain', plane: 'chain', bend: 0 },
-  // discovery plane: registry crawls the workers' catalogs
-  { a: 'ARD Registry', b: 'Translator Agent', plane: 'ard', bend: -16 },
-  { a: 'ARD Registry', b: 'Calculator Agent', plane: 'ard', bend: -16 },
-  { a: 'ARD Registry', b: 'Weather Agent', plane: 'ard', bend: -16 },
-  // data plane: attestation, agent card, A2A message/send
-  { a: 'Orchestrator Agent', b: 'Translator Agent', plane: 'a2a', bend: 0 },
+  // discovery plane: the registry crawls / serves the provider side
+  { a: 'ARD Registry', b: 'Translator Agent', plane: 'ard', bend: 0 },
+  { a: 'ARD Registry', b: 'Calculator Agent', plane: 'ard', bend: 0 },
+  { a: 'ARD Registry', b: 'Weather Agent', plane: 'ard', bend: 0 },
+  // data plane: attestation, agent card, A2A message/send — direct, no intermediary
+  { a: 'Orchestrator Agent', b: 'Translator Agent', plane: 'a2a', bend: 10 },
   { a: 'Orchestrator Agent', b: 'Calculator Agent', plane: 'a2a', bend: 0 },
-  { a: 'Orchestrator Agent', b: 'Weather Agent', plane: 'a2a', bend: 0 },
-  // settlement plane: workers verify + consume payment receipts on chain,
-  // and register their ERC-8004 identity at boot
-  { a: 'Chain', b: 'Translator Agent', plane: 'chain', bend: 16 },
-  { a: 'Chain', b: 'Calculator Agent', plane: 'chain', bend: 16 },
-  { a: 'Chain', b: 'Weather Agent', plane: 'chain', bend: 16 },
+  { a: 'Orchestrator Agent', b: 'Weather Agent', plane: 'a2a', bend: -10 },
+  // settlement plane: workers verify + consume receipts, register identity at boot
+  { a: 'Chain', b: 'Translator Agent', plane: 'chain', bend: 0 },
+  { a: 'Chain', b: 'Calculator Agent', plane: 'chain', bend: 0 },
+  { a: 'Chain', b: 'Weather Agent', plane: 'chain', bend: 0 },
 ] as const;
 
 const edgeKey = (a: string, b: string) => [a, b].sort().join('|');
