@@ -254,6 +254,7 @@ export function startChain(): Promise<void> {
         type: 'chain',
         from: String(name),
         to: CHAIN,
+        lane: 'chain:boot',
         summary: `ERC-8004 registered on-chain — agentId #${agentId}, validation score ${score ?? 90} (tx ${rc.hash.slice(0, 10)}…)`,
         payload: { agentId, identifier, owner: signer.address, registerTx: rc.hash },
       });
@@ -301,6 +302,7 @@ export function startChain(): Promise<void> {
         type: 'chain',
         from: 'User',
         to: CHAIN,
+        lane: 'user:admin',
         summary: `validation score set on-chain — ${identifier.split(':').pop()} → ${score} (tx ${rc.hash.slice(0, 10)}…)`,
         payload: { identifier, score, txHash: rc.hash },
       });
@@ -324,6 +326,7 @@ export function startChain(): Promise<void> {
         type: 'chain',
         from: 'User',
         to: CHAIN,
+        lane: 'user:admin',
         summary: `PolicyWallet.setCaps — per-tx ${fromUSDC(perTxCap)} USDC, cumulative ${fromUSDC(cumulativeCap)} USDC (tx ${rc.hash.slice(0, 10)}…)`,
         payload: { perTxCap: fromUSDC(perTxCap), cumulativeCap: fromUSDC(cumulativeCap), txHash: rc.hash },
       });

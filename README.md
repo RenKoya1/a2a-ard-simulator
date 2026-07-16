@@ -70,11 +70,16 @@ escrow evaluator), #1–3 the worker agents' own wallets, #4 the validator.
 ## Run
 
 ```bash
-npm install
-npm start                # compiles contracts, spawns a local EVM, deploys, starts all agents
-                         # then open http://localhost:4600
+npm install              # also installs web/ (Next.js UI) dependencies
+npm start                # builds the UI if needed, compiles contracts, spawns a local EVM,
+                         # deploys, starts all agents — then open http://localhost:4600
 npm run test:contracts   # Solidity unit tests (caps, replay guard, registry auth, escrow)
+npm run ui:dev           # UI dev server with hot reload on :4610 (proxies /api to the gateway)
+npm run ui:build         # rebuild the static UI served by the gateway (web/out)
 ```
+
+The UI is a Next.js + TypeScript app in `web/`, exported statically and served by the
+gateway in production — `npm start` stays a single-process deployment.
 
 First boot takes ~15s (solc download + hardhat node + deployment); subsequent boots are faster.
 

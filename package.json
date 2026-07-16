@@ -9,7 +9,12 @@
     "dev": "tsx watch src/main.ts",
     "typecheck": "tsc --noEmit",
     "test:contracts": "hardhat test",
-    "chain:compile": "hardhat compile"
+    "chain:compile": "hardhat compile",
+    "ui:dev": "npm --prefix web run dev",
+    "ui:build": "npm --prefix web run build",
+    "ui:typecheck": "npm --prefix web run typecheck",
+    "postinstall": "npm --prefix web install",
+    "prestart": "[ -d web/out ] || npm run ui:build"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.14",

@@ -22,6 +22,12 @@ export interface TraceEvent {
   summary: string;
   taskId?: string;
   contextId?: string;
+  /**
+   * Causality lane. Events in the same lane form a sequential causal chain;
+   * events in different lanes may be genuinely concurrent. The UI only renders
+   * events as simultaneous when their lanes differ.
+   */
+  lane?: string;
   payload?: unknown;
 }
 
