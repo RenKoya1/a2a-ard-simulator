@@ -1,7 +1,31 @@
-// Shared vocabulary between the log, the network diagram, and the playback
-// queue: event types with their display colors, and the window inside which
-// two events are considered simultaneous.
-export const TYPE_META = {
+// Shared vocabulary of the trace stream. TraceType / TraceEvent mirror
+// src/trace.ts on the backend — keep the two in sync.
+export type TraceType =
+  | 'ard'
+  | 'pay'
+  | 'chain'
+  | 'verify'
+  | 'discovery'
+  | 'request'
+  | 'task'
+  | 'status'
+  | 'artifact'
+  | 'response'
+  | 'error';
+
+export interface TraceEvent {
+  id: string;
+  ts: string;
+  type: TraceType;
+  from: string;
+  to: string;
+  summary: string;
+  taskId?: string;
+  contextId?: string;
+  payload?: unknown;
+}
+
+export const TYPE_META: Record<TraceType, { label: string; color: string }> = {
   ard:       { label: 'ARD',       color: 'var(--c-ard)' },
   pay:       { label: 'PAY',       color: 'var(--c-pay)' },
   chain:     { label: 'CHAIN',     color: 'var(--c-chain)' },
@@ -17,3 +41,5 @@ export const TYPE_META = {
 
 // Events closer than this happened together (same burst).
 export const CONCURRENT_MS = 40;
+
+export type PayMode = 'direct' | 'escrow';

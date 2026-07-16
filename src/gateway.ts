@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { v4 as uuidv4 } from 'uuid';
@@ -22,7 +23,12 @@ const getOrchestratorClient = (): Promise<Client> => {
 export function startGateway(agents: AgentDefinition[]): Promise<void> {
   const app = express();
   app.use(express.json());
-  app.use(express.static(path.join(__dirname, '../public')));
+  // UI is the static export of the Next.js app in web/ (`npm run ui:build`).
+  const uiDir = path.join(__dirname, '../web/out');
+  if (!fs.existsSync(path.join(uiDir, 'index.html'))) {
+    console.warn('  ⚠ UI build not found — run `npm run ui:build` (or `npm run ui:dev` for the dev server)');
+  }
+  app.use(express.static(uiDir));
 
   // Agent cards, fetched live from each A2A server's well-known endpoint.
   app.get('/api/agents', async (_req, res) => {
