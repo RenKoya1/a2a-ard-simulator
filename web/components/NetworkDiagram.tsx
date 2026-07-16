@@ -34,13 +34,15 @@ const EDGES = [
   // discovery plane: the registry crawls / serves the provider side
   { a: 'ARD Registry', b: 'Translator Agent', plane: 'ard', bend: 0 },
   { a: 'ARD Registry', b: 'Calculator Agent', plane: 'ard', bend: 0 },
-  { a: 'ARD Registry', b: 'Weather Agent', plane: 'ard', bend: 0 },
+  // Small opposite bends on the two long diagonals: dead-straight they would
+  // both cross Orchestrator→Calculator at exactly (672,130) — a 3-line knot.
+  { a: 'ARD Registry', b: 'Weather Agent', plane: 'ard', bend: -12 },
   // data plane: attestation, agent card, A2A message/send — direct, no intermediary
   { a: 'Orchestrator Agent', b: 'Translator Agent', plane: 'a2a', bend: 10 },
   { a: 'Orchestrator Agent', b: 'Calculator Agent', plane: 'a2a', bend: 0 },
   { a: 'Orchestrator Agent', b: 'Weather Agent', plane: 'a2a', bend: -10 },
   // settlement plane: workers verify + consume receipts, register identity at boot
-  { a: 'Chain', b: 'Translator Agent', plane: 'chain', bend: 0 },
+  { a: 'Chain', b: 'Translator Agent', plane: 'chain', bend: 12 },
   { a: 'Chain', b: 'Calculator Agent', plane: 'chain', bend: 0 },
   { a: 'Chain', b: 'Weather Agent', plane: 'chain', bend: 0 },
 ] as const;
