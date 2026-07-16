@@ -1,13 +1,13 @@
 # A2A + ARD + Agent-Commerce Simulator
 
-A multi-agent simulation combining the [Agent2Agent (A2A) protocol](https://a2a-protocol.org/) v0.3, [Agentic Resource Discovery (ARD)](https://github.com/ards-project/ard-spec), and a mock settlement chain implementing the agent-commerce stack: **x402** micropayments, **ERC-8004**-style identity/validation registries, an **ERC-8196/4337**-style policy wallet, and **ERC-8183**-style escrow.
-Real A2A servers built on `@a2a-js/sdk` are discovered, verified, paid, and connected — all observable live in a web UI.
+A multi-agent simulation combining the [Agent2Agent (A2A) protocol](https://a2a-protocol.org/) v0.3, [Agentic Resource Discovery (ARD)](https://github.com/ards-project/ard-spec), and **real Solidity contracts on a local EVM** implementing the agent-commerce stack: **x402** micropayments, **ERC-8004**-style identity/validation registries, an **ERC-8196/4337**-style policy wallet, and **ERC-8183**-style escrow.
+Real A2A servers built on `@a2a-js/sdk` are discovered, verified, paid, and connected — all observable live in a web UI, with every payment, registration, and escrow settling as an actual transaction on a local Hardhat node.
 
 ## Architecture
 
 ```
-Browser UI (:4600)                    ⛓️ Chain (:41238, mock)
-   │ REST + SSE                        ERC-8004 registries / policy wallet / escrow / receipts
+Browser UI (:4600)          ⛓️ Chain service (:41238) ── EVM: hardhat node (:41237)
+   │ REST + SSE               SimUSDC / AgentRegistry8004 / PolicyWallet / Escrow8183 (Solidity)
    ▼                       ┌──▶ 📇 ARD Registry (:41239)
 Gateway ──A2A──▶ Orchestrator Agent (:41240)   │ crawls /.well-known/ai-catalog.json
                      │ ① extract intents        │
@@ -32,21 +32,32 @@ Gateway ──A2A──▶ Orchestrator Agent (:41240)   │ crawls /.well-known
 - The UI's "ARD Registry" panel can toggle an agent's registration ON/OFF —
   toggled OFF, the agent becomes undiscoverable and delegation to it fails
 
-### Settlement layer (mock chain)
+### Settlement layer (real contracts on a local EVM)
 
-- **x402**: each worker's A2A endpoint sits behind a payment gate. An unpaid request gets
-  `402 Payment Required` with the price and `payTo` wallet; the orchestrator settles a transfer
-  and retries with an `X-PAYMENT` receipt header (injected via an A2A client interceptor);
-  the worker verifies the receipt on chain. Receipts are consumed on use (replay guard)
-- **ERC-8196/4337-style policy wallet**: per-tx and cumulative spending caps are enforced by
-  the chain, outside the model's influence — lower the per-tx cap below an agent's price and
-  the payment is rejected no matter what the orchestrator "wants"
-- **ERC-8004-style registries**: agents register identity on chain at startup; a validator
-  seeds a 0–100 validation score. The orchestrator refuses agents that are unregistered or
-  score below 60 — a hard gate, separate from ARD relevance
-- **ERC-8183-style escrow**: in escrow mode the orchestrator funds an escrow instead of paying
-  up front; after delivery it acts as evaluator and attests, releasing the funds — or refunding
-  them if the task failed (pay on verified delivery, not on faith)
+Four Solidity contracts (`contracts/`), compiled with Hardhat and deployed automatically to a
+local `hardhat node` at startup. Unit tests: `npm run test:contracts`.
+
+- **`SimUSDC.sol`** — minimal ERC-20 stablecoin (6 decimals)
+- **`PolicyWallet.sol`** (ERC-8196/4337-style) — holds the orchestrator's USDC; `pay()` and
+  `fundEscrow()` are checked on-chain against a per-tx cap and a cumulative cap. A persuaded or
+  compromised key-holder cannot spend past the ceilings: the require() lives where the prompt
+  can't reach. Direct payments emit receipts that the payee `consume()`s exactly once (x402
+  replay guard, enforced by the contract)
+- **`AgentRegistry8004.sol`** (ERC-8004-style) — Identity registry (agents self-register their
+  `urn:air:` identifier from their own account) + Validation registry (only the designated
+  validator account can write 0–100 scores). The orchestrator refuses agents that are
+  unregistered or score below 60 — a hard gate, separate from ARD relevance
+- **`Escrow8183.sol`** (ERC-8183-style) — `fund → attest(pass/fail) → release/refund`, attested
+  only by the designated evaluator: pay on verified delivery, not on faith
+
+The x402 flow runs against these contracts end to end: an unpaid A2A request gets
+`402 Payment Required`; the orchestrator calls `PolicyWallet.pay()` (or `fundEscrow()`), retries
+with the `X-PAYMENT` receipt header (injected via an A2A client interceptor); the worker
+verifies the receipt on chain and consumes it. Solidity revert reasons surface directly in the
+chat (e.g. `wallet: exceeds per-tx cap`).
+
+Chain accounts (hardhat's funded test accounts): #0 orchestrator (deployer, wallet owner,
+escrow evaluator), #1–3 the worker agents' own wallets, #4 the validator.
 
 ### A2A layer
 
@@ -59,8 +70,12 @@ Gateway ──A2A──▶ Orchestrator Agent (:41240)   │ crawls /.well-known
 
 ```bash
 npm install
-npm start        # open http://localhost:4600
+npm start                # compiles contracts, spawns a local EVM, deploys, starts all agents
+                         # then open http://localhost:4600
+npm run test:contracts   # Solidity unit tests (caps, replay guard, registry auth, escrow)
 ```
+
+First boot takes ~15s (solc download + hardhat node + deployment); subsequent boots are faster.
 
 ## Usage
 
@@ -88,5 +103,7 @@ Things to try in the UI:
 Ports are configurable via `SIM_GATEWAY_PORT` / `SIM_CHAIN_PORT` / `SIM_REGISTRY_PORT` /
 `SIM_ORCHESTRATOR_PORT` / `SIM_TRANSLATOR_PORT` / `SIM_CALCULATOR_PORT` / `SIM_WEATHER_PORT`.
 
-The chain is an in-process mock: it simulates the protocol *roles* (registries, caps, receipts,
-escrow) so the flows and their failure modes are observable — it proves nothing cryptographically.
+The settlement layer is a real EVM (local Hardhat node) running real contracts — payments,
+caps, receipts, registries, and escrows are all enforced by Solidity, not by the simulator.
+It remains a simulation in one honest sense: a local devnet with well-known test keys proves
+nothing about identity or safety in the wild; it demonstrates the *mechanisms*.

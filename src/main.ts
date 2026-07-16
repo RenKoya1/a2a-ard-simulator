@@ -6,7 +6,6 @@ import { weatherAgent } from './agents/weather.js';
 import { crawlCatalogs, startRegistry } from './ard/registry.js';
 import { startChain, chainUrl } from './chain/chain.js';
 import { startGateway } from './gateway.js';
-import { walletOf } from './agents/base.js';
 import { entryIdentifier } from './ard/catalog.js';
 import { PORTS, agentUrl } from './config.js';
 
@@ -28,9 +27,9 @@ for (const a of agents) {
     body: JSON.stringify({
       identifier: entryIdentifier(a.slug),
       name: a.name,
+      slug: a.slug,
       domain: `localhost:${a.port}`,
       cardUrl: `${agentUrl(a.port)}/.well-known/agent-card.json`,
-      wallet: walletOf(a.slug),
       score: 92,
     }),
   });

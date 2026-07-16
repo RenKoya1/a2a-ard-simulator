@@ -3,6 +3,7 @@ const env = (key: string, fallback: number): number =>
 
 export const PORTS = {
   gateway: env('SIM_GATEWAY_PORT', 4600),
+  evm: env('SIM_EVM_PORT', 41237),
   chain: env('SIM_CHAIN_PORT', 41238),
   registry: env('SIM_REGISTRY_PORT', 41239),
   orchestrator: env('SIM_ORCHESTRATOR_PORT', 41240),

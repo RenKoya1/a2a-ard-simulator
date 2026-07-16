@@ -236,6 +236,7 @@
         <label><input type="radio" name="paymode" value="escrow"> escrow (ERC-8183)</label>
       </div>
       <div id="validations"></div>
+      <div id="contracts" style="font-size:10px;color:var(--muted);line-height:1.6;word-break:break-all"></div>
     </div>
   </section>
 
@@ -547,7 +548,11 @@ async function loadChain() {
         ? `<div class="bal"><span>escrow:pool</span><b>${Number(st.balances['escrow:pool']).toFixed(2)} USDC</b></div>` : '');
     if (document.activeElement !== $('#cap-tx')) $('#cap-tx').value = st.policy.perTxCap;
     if (document.activeElement !== $('#cap-cum')) $('#cap-cum').value = st.policy.cumulativeCap;
-    $('#spent').textContent = `spent (cumulative): ${st.policy.spent.toFixed(2)} / ${st.policy.cumulativeCap} USDC — enforced on-chain (ERC-8196-style)`;
+    $('#spent').textContent = `spent (cumulative): ${st.policy.spent.toFixed(2)} / ${st.policy.cumulativeCap} USDC — enforced by PolicyWallet.sol on a local EVM`;
+    $('#contracts').innerHTML = st.contracts
+      ? 'contracts (hardhat node :' + (st.evmRpc ?? '').split(':').pop() + '):<br>' +
+        Object.entries(st.contracts).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join('<br>')
+      : '';
     $('#validations').innerHTML = st.identity.map((e) => {
       const score = st.validations[e.identifier]?.score ?? 0;
       return `<div class="val-row"><span class="nm">${esc(e.name)}</span>
