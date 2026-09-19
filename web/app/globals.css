@@ -161,6 +161,16 @@ header .sub { color: var(--muted); font-size: 12px; }
 .validator-vote details { width: 100%; }
 .validator-demo .quorum-pass { color: var(--c-chain); }
 .validator-demo .quorum-block, .validator-demo [role="alert"] { color: var(--c-error); }
+.incentive-panel { padding: 10px; font-size: 12px; border: 0; }
+.incentive-policy { display: grid; gap: 5px; padding: 8px; background: var(--panel2); border-radius: 6px; }
+.incentive-policy span { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; }
+.incentive-policy b { color: var(--c-chain); }
+.addition-inputs { display: flex; gap: 8px; align-items: center; }
+.addition-inputs label { flex: 1; min-width: 0; }
+.addition-inputs input { width: 100%; margin-top: 4px; padding: 6px; color: var(--text); background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; }
+.incentive-result { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.incentive-result code { overflow-wrap: anywhere; font-size: 10px; }
+.incentive-balances { margin-top: 12px; }
 
 /* ---- network ---- */
 #network { grid-area: network; }

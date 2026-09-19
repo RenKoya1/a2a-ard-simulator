@@ -7,6 +7,7 @@ import Header from '@/components/Header';
 import AgentsPanel from '@/components/AgentsPanel';
 import ArdPanel from '@/components/ArdPanel';
 import ChainPanel from '@/components/ChainPanel';
+import IncentivePanel from '@/components/IncentivePanel';
 import NetworkDiagram from '@/components/NetworkDiagram';
 import Chat from '@/components/Chat';
 import ProtocolLog from '@/components/ProtocolLog';
@@ -22,6 +23,7 @@ export default function Page() {
           <aside id="sidebar">
             <AgentsPanel />
             <ArdPanel />
+            <IncentivePanel />
             <ChainPanel payMode={payMode} onPayModeChange={setPayMode} />
           </aside>
           <NetworkDiagram />

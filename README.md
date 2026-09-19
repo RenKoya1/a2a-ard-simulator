@@ -34,7 +34,7 @@ Gateway ──A2A──▶ Orchestrator Agent (:41240)   │ crawls /.well-known
 
 ### Settlement layer (real contracts on a local EVM)
 
-Five Solidity contracts (`contracts/`, solc 0.8.36), compiled with **Hardhat 3** and deployed
+Six Solidity contracts (`contracts/`, solc 0.8.36), compiled with **Hardhat 3** and deployed
 automatically to a local `hardhat node` at startup. Unit tests (mocha + ethers v6 + HH3 chai
 matchers): `npm run test:contracts`.
 
@@ -65,6 +65,8 @@ chat (e.g. `wallet: exceeds per-tx cap`).
 
 Chain accounts (hardhat's funded test accounts): #0 orchestrator (deployer, wallet owner,
 escrow evaluator and committee selector), #1–3 the worker agents' own wallets, #4–6 the validators.
+The staking experiment additionally uses #7–8 as pool operators, #9 as a challenger,
+and #10 as the verification requester with a separate test-ETH budget.
 
 ### Who does the orchestrator trust outside a devnet?
 
@@ -91,10 +93,70 @@ Each run opens a fresh round and writes real EVM transactions; the protocol log 
 transaction hashes and report commitments. **Set all 3** sets the same score from all three
 keys in a fresh round. The scenarios inject verdicts, not faulty worker behavior or actual
 audits. Report hashes commit to synthetic reports; they are not correctness proofs.
-No staking, slashing, disputes, operator rotation, or independent production infrastructure
-is implemented. Committee selection and the controller's ability to restart rounds remain
+This fixed-committee mode has no staking, slashing, disputes, operator rotation, or independent
+production infrastructure; the separate staking experiment is described below.
+Committee selection and the controller's ability to restart rounds remain
 trust assumptions. Escrow delivery evaluation is still performed by the orchestrator and
-is separate from this pre-delegation eligibility check.
+is separate from this pre-delegation eligibility check. Supported additions now also run the
+objective result verifier below before escrow delivery is accepted.
+
+### Algorithmic validator incentives
+
+**Validator incentives** in the sidebar runs a second experiment using `StakedValidator.sol`.
+It replaces majority-based rewards with an objective rule: Solidity re-executes `int64 + int64`
+using an `int128` result. A correct minority earns the same fee as any other correct validator;
+a lying majority cannot change the answer or confiscate the minority's stake.
+
+1. Operators deposit collateral. The demo seeds five test accounts with 10 test ETH each.
+   Contract registration requires no operator allowlist or administrator approval, with a
+   bounded 16-address demo pool. The HTTP UI controls only its five seeded accounts.
+2. A requester pays exactly 0.03 test ETH. The contract draws three distinct operators with
+   at least 1 free ETH each and locks 1 ETH per operator until finalization.
+3. Operators commit a hash bound to the chain, contract, job, validator, answer and random salt.
+   Commit lasts 20 blocks; reveal lasts another 20. An address cannot reveal another's copied hash.
+4. During a 10-block challenge period, anyone can prove a revealed answer wrong by invoking
+   the deterministic verifier. The first successful reporter receives 20% of that penalty.
+5. Anyone can finalize after the deadline. Each correct reveal earns 0.01 ETH; each false
+   reveal loses its 1 ETH bond; no valid reveal loses 0.1 ETH and earns nothing. Finalization
+   checks **every** reveal, so fraud is penalized even without an external challenger.
+   Remaining slashes stay in a non-withdrawable reserve. Unused fees become requester credit.
+6. Stake that is not locked and earned credits can be withdrawn by their owner without an
+   administrator. The UI supports credit claims and adding 1 test ETH of collateral.
+
+| Scenario | Result | Rewards / penalties across committee |
+|---|---|---|
+| Everyone correct | Correct worker result accepted | +0.03 / −0 ETH |
+| Honest minority | Correct minority wins over two liars | +0.01 / −2 ETH |
+| Everyone colludes | False worker result rejected despite three matching lies | +0 / −3 ETH |
+| No reveals | Fails closed, requester fee credited back | +0 / −0.3 ETH |
+| Copy a commitment | Copier cannot reveal; correct submissions still work | +0.02 / −0.1 ETH |
+
+These are real local-EVM deposits, locks, reward credits, penalties and withdrawals. Scenario
+answers are injected to model behavior, not independent production operators. The UI shows
+per-job reward/penalty deltas, balances and the settlement transaction; the protocol log
+shows each phase. Monetary deltas exclude gas. The runner mines empty devnet blocks to advance
+deadlines; the Solidity checks still enforce those deadlines.
+
+**Actual A2A integration:** `calculate 2+3` also verifies the calculator's returned artifact
+through a staked job. The orchestrator binds the artifact operands to the requested operands,
+and returns success only when the on-chain job accepts the claimed result. In escrow mode,
+verification failure causes a refund rather than release. Direct x402 payment happens before
+execution and is not retroactively refundable. Verification fees use the dedicated requester
+account's test ETH, separate from the existing USDC policy wallet. Supported inputs are a
+single integer addition with operands between −1,000,000 and 1,000,000, optionally prefixed by
+`calculate`, `calc` or `計算`. Other expressions still work with the original delivery checks
+and are **not** described as stake-verified.
+
+**Trust boundaries:** this is application-level staking, not Ethereum consensus, restaking,
+or an audited production protocol. The block-derived draw is manipulable and replaceable with
+verifiable randomness in a production design. Multiple funded identities, pool-slot exhaustion,
+transaction censorship and copied/front-run fraud reports are not solved by this demo.
+Commit–reveal prevents copying a sealed commitment across identities/jobs, not private collusion
+or learning a publicly computable answer. Correctness here comes from cheap on-chain arithmetic;
+staking does not prove that an operator expended effort. Richer tasks require their own sound
+verifier or proof system, and subjective judgments cannot use this arithmetic rule. Anyone may
+finalize, but liveness still requires a caller to submit that transaction. No admin can override
+job verdicts or redirect rewards.
 
 ### A2A layer
 
@@ -111,6 +173,7 @@ npm start                # builds the UI if needed, compiles contracts, spawns a
                          # deploys, starts all agents — then open http://localhost:4600
 npm run test:contracts   # Solidity unit tests (caps, replay guard, registry auth, escrow)
 npm run test:validators  # with a fresh simulator running: 5 scenarios through actual A2A delegation
+npm run test:incentives  # running simulator: incentive scenarios, withdrawals, and A2A/escrow verification
 npm run ui:dev           # UI dev server with hot reload on :4610 (proxies /api to the gateway)
 npm run ui:build         # rebuild the static UI served by the gateway (web/out)
 ```
