@@ -28,7 +28,11 @@ export interface ChainState {
   balances: Record<string, number>;
   policy: { owner: string; perTxCap: number; cumulativeCap: number; spent: number };
   identity: { identifier: string; name: string }[];
-  validations: Record<string, { score: number } | undefined>;
+  validations: Record<string, {
+    score: number; eligible: boolean; approvals: number; responses: number;
+    round: number; expiresAt: number;
+    votes: { name: string; address: string; score: number | null; reportHash: string | null }[];
+  } | undefined>;
   contracts?: Record<string, string>;
   evmRpc?: string;
 }

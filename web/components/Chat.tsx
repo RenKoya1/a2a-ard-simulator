@@ -14,8 +14,8 @@ const SCENARIOS = [
 
 const WELCOME =
   'Welcome to the A2A + ARD + agent-commerce simulator.\n' +
-  'Every delegation runs the full pipeline: ARD discovery → trustManifest verification → ERC-8004 on-chain eligibility → x402 payment (402 → pay → retry) → A2A call.\n' +
-  "Things to try: toggle an agent OFF in the ARD panel (undiscoverable); set a validation score below 60 (ineligible); lower the per-tx cap below an agent's price (payment blocked by the policy wallet); switch to escrow mode (ERC-8183: fund → deliver → attest → release).";
+  'Every delegation runs the full pipeline: ARD discovery → trustManifest verification → fresh 2-of-3 validator approval → x402 payment (402 → pay → retry) → A2A call.\n' +
+  "Try the validator scenarios in Chain / Wallet, then send a matching request: one false approval or two offline validators blocks delegation; two colluding validators can still fool the policy. You can also toggle ARD discovery, lower wallet caps, or switch to escrow (fund → deliver → attest → release).";
 
 interface ChatMessage {
   key: number;

@@ -148,6 +148,19 @@ header .sub { color: var(--muted); font-size: 12px; }
   border-radius: 4px; padding: 2px 9px; cursor: pointer; font-size: 11px;
 }
 #contracts { font-size: 10px; color: var(--muted); line-height: 1.6; word-break: break-all; }
+.validator-demo { border-top: 1px solid var(--border); padding-top: 8px; }
+.validator-demo h3 { font-size: 13px; margin: 4px 0; }
+.validator-demo p { color: var(--muted); line-height: 1.5; font-size: 11px; }
+.validator-demo label { display: block; margin: 8px 0; }
+.validator-demo select { display: block; width: 100%; margin-top: 4px; padding: 6px; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+.validator-demo button { padding: 6px 9px; background: rgba(45,212,191,.15); color: var(--c-chain); border: 1px solid var(--c-chain); border-radius: 4px; cursor: pointer; }
+.validator-demo button:disabled, .val-row button:disabled { opacity: .5; cursor: default; }
+.validator-vote { display: flex; flex-wrap: wrap; gap: 4px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 11px; }
+.validator-vote b { flex: 1 1 100%; }
+.validator-vote code { color: var(--muted); overflow-wrap: anywhere; }
+.validator-vote details { width: 100%; }
+.validator-demo .quorum-pass { color: var(--c-chain); }
+.validator-demo .quorum-block, .validator-demo [role="alert"] { color: var(--c-error); }
 
 /* ---- network ---- */
 #network { grid-area: network; }

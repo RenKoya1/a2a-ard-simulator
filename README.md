@@ -7,13 +7,13 @@ Real A2A servers built on `@a2a-js/sdk` are discovered, verified, paid, and conn
 
 ```
 Browser UI (:4600)          ⛓️ Chain service (:41238) ── EVM: hardhat node (:41237)
-   │ REST + SSE               SimUSDC / AgentRegistry8004 / PolicyWallet / Escrow8183 (Solidity)
+   │ REST + SSE               SimUSDC / AgentRegistry8004 / ValidatorQuorum / PolicyWallet / Escrow8183
    ▼                       ┌──▶ 📇 ARD Registry (:41239)
 Gateway ──A2A──▶ Orchestrator Agent (:41240)   │ crawls /.well-known/ai-catalog.json
                      │ ① extract intents        │
                      │ ② resolve via ARD /search ◀──┘
                      │ ③ verify trustManifest (fetch attestation from publisher host)
-                     │ ④ ERC-8004 eligibility (registered + validation score ≥ 60)
+                     │ ④ eligibility (registered + fresh 2-of-3 validator quorum, scores ≥ 60)
                      │ ⑤ x402: unpaid call → 402 quote → pay (direct or escrow) → retry
                      │ ⑥ A2A call with X-PAYMENT receipt (worker verifies on chain)
                      ├──▶ Translator Agent (:41241)  0.05 USDC/call
@@ -34,7 +34,7 @@ Gateway ──A2A──▶ Orchestrator Agent (:41240)   │ crawls /.well-known
 
 ### Settlement layer (real contracts on a local EVM)
 
-Four Solidity contracts (`contracts/`, solc 0.8.36), compiled with **Hardhat 3** and deployed
+Five Solidity contracts (`contracts/`, solc 0.8.36), compiled with **Hardhat 3** and deployed
 automatically to a local `hardhat node` at startup. Unit tests (mocha + ethers v6 + HH3 chai
 matchers): `npm run test:contracts`.
 
@@ -45,9 +45,15 @@ matchers): `npm run test:contracts`.
   can't reach. Direct payments emit receipts that the payee `consume()`s exactly once (x402
   replay guard, enforced by the contract)
 - **`AgentRegistry8004.sol`** (ERC-8004-style) — Identity registry (agents self-register their
-  `urn:air:` identifier from their own account) + Validation registry (only the designated
-  validator account can write 0–100 scores). The orchestrator refuses agents that are
-  unregistered or score below 60 — a hard gate, separate from ARD relevance
+  `urn:air:` identifier from their own account) + Validation registry. Only the
+  `ValidatorQuorum` contract can write scores in this deployment.
+- **`ValidatorQuorum.sol`** — A consumer-selected committee of three fixed operator addresses.
+  Two distinct scores ≥60 are required; the published score is the lowest approving score.
+  Each transaction records its sender, round, score and synthetic report hash. Duplicate,
+  unauthorized, old-round and expired votes revert. New rounds invalidate prior approval.
+  The orchestrator reads `status()` to enforce quorum and expiry (one hour), rather than
+  trusting a potentially stale historical registry score. This is a custom policy, not
+  a complete ERC-8004 implementation or a mandated ERC-8004 consensus mechanism.
 - **`Escrow8183.sol`** (ERC-8183-style) — `fund → attest(pass/fail) → release/refund`, attested
   only by the designated evaluator: pay on verified delivery, not on faith
 
@@ -58,7 +64,37 @@ verifies the receipt on chain and consumes it. Solidity revert reasons surface d
 chat (e.g. `wallet: exceeds per-tx cap`).
 
 Chain accounts (hardhat's funded test accounts): #0 orchestrator (deployer, wallet owner,
-escrow evaluator), #1–3 the worker agents' own wallets, #4 the validator.
+escrow evaluator and committee selector), #1–3 the worker agents' own wallets, #4–6 the validators.
+
+### Who does the orchestrator trust outside a devnet?
+
+A practical starting point is independent auditors, re-execution providers and domain
+specialists selected by the consumer under an explicit trust policy. Here, three separate
+keys simulate those operators. Blockchain authenticates their votes and enforces the quorum;
+it does not establish their real-world independence or make an incorrect assessment true.
+The [ERC-8004 specification](https://eips.ethereum.org/EIPS/eip-8004) supports pluggable
+validation approaches; this demo chooses a fixed committee as one illustrative policy.
+
+In **Chain / Wallet → Who validates the validators?**, choose an agent and scenario, then
+click **Run on local EVM**. Send a corresponding chat request (e.g. `weather in Tokyo`)
+to observe the orchestrator's actual eligibility gate before payment:
+
+| Scenario | Synthetic scores | Result |
+|---|---|---|
+| Honest agreement | 90 / 92 / 95 | Delegate |
+| One false rejection | 20 / 92 / 95 | Delegate: two honest approvals |
+| One false approval | 100 / 20 / 25 | Block: a lone malicious validator cannot approve |
+| Two validators offline | 90 / absent / absent | Block: insufficient quorum |
+| Two validators collude | 100 / 100 / 20 | Delegate incorrectly: majority collusion breaks this policy |
+
+Each run opens a fresh round and writes real EVM transactions; the protocol log includes
+transaction hashes and report commitments. **Set all 3** sets the same score from all three
+keys in a fresh round. The scenarios inject verdicts, not faulty worker behavior or actual
+audits. Report hashes commit to synthetic reports; they are not correctness proofs.
+No staking, slashing, disputes, operator rotation, or independent production infrastructure
+is implemented. Committee selection and the controller's ability to restart rounds remain
+trust assumptions. Escrow delivery evaluation is still performed by the orchestrator and
+is separate from this pre-delegation eligibility check.
 
 ### A2A layer
 
@@ -74,6 +110,7 @@ npm install              # also installs web/ (Next.js UI) dependencies
 npm start                # builds the UI if needed, compiles contracts, spawns a local EVM,
                          # deploys, starts all agents — then open http://localhost:4600
 npm run test:contracts   # Solidity unit tests (caps, replay guard, registry auth, escrow)
+npm run test:validators  # with a fresh simulator running: 5 scenarios through actual A2A delegation
 npm run ui:dev           # UI dev server with hot reload on :4610 (proxies /api to the gateway)
 npm run ui:build         # rebuild the static UI served by the gateway (web/out)
 ```
