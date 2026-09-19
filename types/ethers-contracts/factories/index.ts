@@ -5,3 +5,4 @@ export * as escrow8183Sol from './Escrow8183.sol/index.js';
 export * as policyWalletSol from './PolicyWallet.sol/index.js';
 export { AgentRegistry8004__factory } from './AgentRegistry8004__factory.js';
 export { SimUSDC__factory } from './SimUSDC__factory.js';
+export { ValidatorQuorum__factory } from './ValidatorQuorum__factory.js';
