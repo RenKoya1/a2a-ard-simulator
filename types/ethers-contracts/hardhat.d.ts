@@ -15,6 +15,7 @@ getContractFactory(name: 'Escrow8183', signerOrOptions?: ethers.Signer | Factory
 getContractFactory(name: 'IERC20', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IERC20__factory>
 getContractFactory(name: 'IEscrow8183', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IEscrow8183__factory>
 getContractFactory(name: 'PolicyWallet', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.PolicyWallet__factory>
+getContractFactory(name: 'StakedValidator', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.StakedValidator__factory>
 getContractFactory(name: 'ValidatorQuorum', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.ValidatorQuorum__factory>
 getContractFactory(name: 'SimUSDC', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.SimUSDC__factory>
 
@@ -23,6 +24,7 @@ getContractAt(name: 'Escrow8183', address: string | ethers.Addressable, signer?:
 getContractAt(name: 'IERC20', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IERC20>
 getContractAt(name: 'IEscrow8183', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IEscrow8183>
 getContractAt(name: 'PolicyWallet', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.PolicyWallet>
+getContractAt(name: 'StakedValidator', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.StakedValidator>
 getContractAt(name: 'ValidatorQuorum', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.ValidatorQuorum>
 getContractAt(name: 'SimUSDC', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.SimUSDC>
 
@@ -31,6 +33,7 @@ deployContract(name: 'Escrow8183', signerOrOptions?: ethers.Signer | DeployContr
 deployContract(name: 'IERC20', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC20>
 deployContract(name: 'IEscrow8183', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IEscrow8183>
 deployContract(name: 'PolicyWallet', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.PolicyWallet>
+deployContract(name: 'StakedValidator', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.StakedValidator>
 deployContract(name: 'ValidatorQuorum', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ValidatorQuorum>
 deployContract(name: 'SimUSDC', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.SimUSDC>
 
@@ -39,6 +42,7 @@ deployContract(name: 'Escrow8183', args: any[], signerOrOptions?: ethers.Signer 
 deployContract(name: 'IERC20', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC20>
 deployContract(name: 'IEscrow8183', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IEscrow8183>
 deployContract(name: 'PolicyWallet', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.PolicyWallet>
+deployContract(name: 'StakedValidator', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.StakedValidator>
 deployContract(name: 'ValidatorQuorum', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ValidatorQuorum>
 deployContract(name: 'SimUSDC', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.SimUSDC>
 
