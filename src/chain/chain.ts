@@ -11,16 +11,18 @@ import {
   parseUnits,
   keccak256,
   toUtf8Bytes,
+  parseEther,
   type JsonRpcSigner,
 } from 'ethers';
 import { PORTS, agentUrl } from '../config.js';
 import { traceBus } from '../trace.js';
+import { IncentiveService, INCENTIVE_OPERATORS } from './incentives.js';
 
 /**
  * Chain service backed by a REAL local EVM. On startup it:
  *   1. compiles the Solidity contracts (hardhat compile)
  *   2. spawns a local `hardhat node` (JSON-RPC on PORTS.evm)
- *   3. deploys SimUSDC, AgentRegistry8004, Escrow8183, and PolicyWallet
+ *   3. deploys settlement contracts, ValidatorQuorum and StakedValidator
  *   4. exposes the same HTTP surface the simulation used before — now every
  *      call settles as an actual transaction / view call against the contracts
  *
@@ -28,6 +30,7 @@ import { traceBus } from '../trace.js';
  *   #0 orchestrator — deployer, PolicyWallet owner, escrow evaluator
  *   #1 translator, #2 calculator, #3 weather — the agents' own wallets
  *   #4–6 validators — separate keys simulating independent operators
+ *   #7–8 additional staked operators, #9 challenger, #10 verification fee payer
  *
  * Contract unit tests live in test/contracts (`npm run test:contracts`).
  */
@@ -49,6 +52,10 @@ const SIGNER_INDEX: Record<string, number> = {
   validator: 4,
   validatorB: 5,
   validatorC: 6,
+  validatorD: 7,
+  validatorE: 8,
+  challenger: 9,
+  verificationClient: 10,
 };
 
 const VALIDATORS = [
@@ -70,6 +77,7 @@ interface Deployed {
   usdc: Contract;
   registry: Contract;
   quorum: Contract;
+  incentives: Contract;
   escrow: Contract;
   wallet: Contract;
   addresses: Record<string, string>;
@@ -213,6 +221,10 @@ async function bootEvm(): Promise<Deployed> {
   const escrow = await deploy('Escrow8183', await usdc.getAddress());
   const wallet = await deploy('PolicyWallet', await usdc.getAddress(), USDC(0.5), USDC(5));
   await (await usdc.transfer(await wallet.getAddress(), USDC(100))).wait();
+  const incentives = await deploy('StakedValidator');
+  for (const slug of INCENTIVE_OPERATORS) {
+    await (await (incentives.connect(signers[slug]) as Contract).deposit({ value: parseEther('10') })).wait();
+  }
 
   const addresses = {
     usdc: await usdc.getAddress(),
@@ -220,13 +232,14 @@ async function bootEvm(): Promise<Deployed> {
     quorum: await quorum.getAddress(),
     escrow: await escrow.getAddress(),
     wallet: await wallet.getAddress(),
+    incentives: await incentives.getAddress(),
   };
   console.log(`  ⛓  deployed — USDC ${addresses.usdc}`);
   console.log(`  ⛓             AgentRegistry8004 ${addresses.registry}`);
   console.log(`  ⛓             Escrow8183 ${addresses.escrow}`);
   console.log(`  ⛓             PolicyWallet ${addresses.wallet} (100 USDC funded)`);
 
-  return { provider, signers, usdc, registry, quorum, escrow, wallet, addresses };
+  return { provider, signers, usdc, registry, quorum, incentives, escrow, wallet, addresses };
 }
 
 export function startChain(): Promise<void> {
@@ -536,6 +549,7 @@ export function startChain(): Promise<void> {
     bootEvm()
       .then((deployed) => {
         evm = deployed;
+        new IncentiveService(deployed.incentives, deployed.provider, deployed.signers, () => { txCount++; }).routes(app);
         const server = app.listen(PORTS.chain, () => {
           console.log(`  ✓ ${CHAIN} service — ${chainUrl()} (backed by EVM :${PORTS.evm})`);
           resolve();

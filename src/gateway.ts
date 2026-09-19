@@ -125,6 +125,24 @@ export function startGateway(agents: AgentDefinition[]): Promise<void> {
     }
   });
 
+  // Local staking experiment, proxied for the UI.
+  app.get('/api/incentives/state', async (_req, res) => {
+    try {
+      const upstream = await fetch(`${chainUrl()}/incentives/state`);
+      res.status(upstream.status).json(await upstream.json());
+    } catch (e) { res.status(502).json({ error: String(e) }); }
+  });
+  for (const action of ['scenario', 'deposit', 'withdraw'] as const) {
+    app.post(`/api/incentives/${action}`, async (req, res) => {
+      try {
+        const upstream = await fetch(`${chainUrl()}/incentives/${action}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body),
+        });
+        res.status(upstream.status).json(await upstream.json());
+      } catch (e) { res.status(502).json({ error: String(e) }); }
+    });
+  }
+
   // Live protocol trace via SSE (replays recent history on connect).
   app.get('/api/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');

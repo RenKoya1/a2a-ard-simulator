@@ -17,6 +17,7 @@ import { A2A_CARD_MEDIA_TYPE, entryIdentifier, type CatalogEntry } from '../ard/
 import { registryApiUrl } from '../ard/registry.js';
 import { CHAIN, chainUrl } from '../chain/chain.js';
 import { agentMessage, partsText, textOf, type AgentDefinition } from './base.js';
+import { additionOperands, additionClaim } from './addition.js';
 
 const ORCH_WALLET = 'wallet:orchestrator';
 const MIN_VALIDATION_SCORE = 60;
@@ -473,11 +474,29 @@ async function delegate(intent: Intent, payMode: PayMode, lane: string): Promise
       holder.lane = undefined;
     }
 
-    // ERC-8183: the evaluator (here: the orchestrator itself) attests delivery.
+    // Result-level objective verification, in addition to the agent eligibility gate.
+    // For supported additions, escrow is released only after this contract verdict.
+    const operands = intent.intent === 'calculate' ? additionOperands(intent.input) : undefined;
+    if (!failure && operands) {
+      try {
+        const claimed = additionClaim(artifacts.join(''), operands);
+        const response = await fetch(`${chainUrl()}/incentives/verify`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...operands, claimed }),
+        });
+        const verdict = await response.json();
+        if (!response.ok || verdict.accepted !== true) throw new Error(verdict.error ?? 'Staked verification rejected the result');
+        paidNote += `; stake-verified job #${verdict.id}`;
+      } catch (e) {
+        failure = `Result verification failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
+
+    // ERC-8183: the orchestrator relays the verdict; unsupported tasks retain the demo delivery check.
     if (escrowId && quote) {
       const delivered = !failure && artifacts.some(Boolean);
       await attestEscrow(escrowId, delivered, quote.payTo, lane);
-      paidNote = delivered ? `escrow ${quote.amount} USDC released` : `escrow ${quote.amount} USDC refunded`;
+      paidNote += delivered ? '; released' : '; refunded';
     }
 
     if (failure) return `⚠️ ${agent.displayName} (${paidNote}): ${failure}`;

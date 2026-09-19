@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test:contracts": "hardhat test",
     "test:validators": "tsx test/validatorScenarios.ts",
+    "test:incentives": "tsx test/incentiveScenarios.ts",
     "chain:compile": "hardhat compile",
     "ui:dev": "npm --prefix web run dev",
     "ui:build": "npm --prefix web run build",
