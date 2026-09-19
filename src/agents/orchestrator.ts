@@ -184,16 +184,16 @@ async function checkChainEligibility(agent: DiscoveredAgent, lane: string): Prom
   try {
     const entry = (await (
       await fetch(`${chainUrl()}/registry?id=${encodeURIComponent(agent.identifier)}`)
-    ).json()) as { registered: boolean; agentId?: number; validation?: { score: number } };
+    ).json()) as { registered: boolean; agentId?: number; validation?: { score: number; eligible: boolean; approvals: number } };
     const score = entry.validation?.score ?? 0;
-    const ok = entry.registered && score >= MIN_VALIDATION_SCORE;
+    const ok = entry.registered && entry.validation?.eligible === true && score >= MIN_VALIDATION_SCORE;
     traceBus.push({
       type: ok ? 'chain' : 'error',
       from: CHAIN,
       to: ORCHESTRATOR,
       lane,
       summary: entry.registered
-        ? `agentId #${entry.agentId}, validation score ${score} — ${ok ? 'eligible' : `below threshold ${MIN_VALIDATION_SCORE}, refusing`}`
+        ? `agentId #${entry.agentId}, ${entry.validation?.approvals ?? 0}/3 approvals, score ${score} — ${ok ? 'fresh quorum: eligible' : 'no fresh 2-of-3 quorum, refusing'}`
         : 'not registered in Identity registry — refusing',
       payload: entry,
     });
@@ -427,7 +427,7 @@ async function delegate(intent: Intent, payMode: PayMode, lane: string): Promise
       return `⚠️ ${agent.displayName}: refusing to connect — trust verification failed`;
     }
     if (!(await checkChainEligibility(agent, lane))) {
-      return `⚠️ ${agent.displayName}: on-chain eligibility failed (unregistered or validation score < ${MIN_VALIDATION_SCORE})`;
+      return `⚠️ ${agent.displayName}: on-chain eligibility failed (unregistered, expired, or no 2-of-3 validator quorum)`;
     }
 
     const { client, holder } = await getClient(agent, lane);

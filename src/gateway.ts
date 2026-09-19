@@ -92,7 +92,7 @@ export function startGateway(agents: AgentDefinition[]): Promise<void> {
     }
   });
 
-  // Mock chain control plane, proxied for the UI.
+  // Local EVM control plane, proxied for the UI.
   app.get('/api/chain/state', async (_req, res) => {
     try {
       res.json(await (await fetch(`${chainUrl()}/state`)).json());
@@ -117,7 +117,7 @@ export function startGateway(agents: AgentDefinition[]): Promise<void> {
       const upstream = await fetch(`${chainUrl()}/admin/validation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: req.body?.identifier, score: req.body?.score }),
+        body: JSON.stringify({ identifier: req.body?.identifier, score: req.body?.score, scenario: req.body?.scenario }),
       });
       res.status(upstream.status).json(await upstream.json());
     } catch (e) {

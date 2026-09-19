@@ -9,6 +9,8 @@ import {
   JsonRpcProvider,
   formatUnits,
   parseUnits,
+  keccak256,
+  toUtf8Bytes,
   type JsonRpcSigner,
 } from 'ethers';
 import { PORTS, agentUrl } from '../config.js';
@@ -25,7 +27,7 @@ import { traceBus } from '../trace.js';
  * Accounts (hardhat's funded test accounts):
  *   #0 orchestrator — deployer, PolicyWallet owner, escrow evaluator
  *   #1 translator, #2 calculator, #3 weather — the agents' own wallets
- *   #4 validator — the only account allowed to write validation scores
+ *   #4–6 validators — separate keys simulating independent operators
  *
  * Contract unit tests live in test/contracts (`npm run test:contracts`).
  */
@@ -45,6 +47,21 @@ const SIGNER_INDEX: Record<string, number> = {
   calculator: 2,
   weather: 3,
   validator: 4,
+  validatorB: 5,
+  validatorC: 6,
+};
+
+const VALIDATORS = [
+  { slug: 'validator', name: 'Independent auditor' },
+  { slug: 'validatorB', name: 'Re-execution provider' },
+  { slug: 'validatorC', name: 'Domain specialist' },
+];
+const SCENARIOS: Record<string, { scores: (number | null)[]; description: string }> = {
+  healthy: { scores: [90, 92, 95], description: 'Honest agreement: three operators approve.' },
+  dissent: { scores: [20, 92, 95], description: 'One false rejection: two honest approvals still pass.' },
+  compromised: { scores: [100, 20, 25], description: 'One false approval: two honest rejections block delegation.' },
+  unavailable: { scores: [90, null, null], description: 'Two offline: no quorum, delegation blocked.' },
+  collusion: { scores: [100, 100, 20], description: 'Two colluding operators: false approval passes. Consensus is not truth.' },
 };
 
 interface Deployed {
@@ -52,6 +69,7 @@ interface Deployed {
   signers: Record<string, JsonRpcSigner>;
   usdc: Contract;
   registry: Contract;
+  quorum: Contract;
   escrow: Contract;
   wallet: Contract;
   addresses: Record<string, string>;
@@ -64,6 +82,48 @@ let evmChild: ReturnType<typeof spawn> | undefined;
 const registeredAgents: { identifier: string; name: string; slug: string; agentId: number }[] = [];
 const escrowJobIds: bigint[] = [];
 let txCount = 0;
+let validationBusy = false;
+
+async function validationState(agentId: number | bigint) {
+  const { quorum, signers } = evm!;
+  const [round, eligible, score] = await quorum.status(agentId);
+  const votes = await Promise.all(VALIDATORS.map(async (v) => {
+    const vote = await quorum.votes(agentId, signers[v.slug].address);
+    const current = vote.roundId === round.id && round.id !== 0n;
+    return { name: v.name, address: signers[v.slug].address,
+      score: current ? Number(vote.score) : null, reportHash: current ? vote.reportHash : null };
+  }));
+  return { score: Number(score), eligible, approvals: Number(round.approvals),
+    responses: Number(round.responses), round: Number(round.id), expiresAt: Number(round.expiresAt), votes };
+}
+
+async function runValidation(agentId: number | bigint, scores: (number | null)[], scenario: string, lane: string) {
+  const { quorum, signers } = evm!;
+  const opened = await (await quorum.beginRound(agentId, 3600)).wait();
+  txCount++;
+  const round = await quorum.rounds(agentId);
+  traceBus.push({ type: 'chain', from: 'User', to: CHAIN, lane,
+    summary: `Validation round #${round.id}: ${scenario} — 2 of 3 required; previous approval invalidated`,
+    payload: { agentId: Number(agentId), round: Number(round.id), txHash: opened.hash } });
+  for (const [i, v] of VALIDATORS.entries()) {
+    const score = scores[i];
+    if (score === null) continue;
+    // A commitment to a synthetic report, NOT proof that the verdict is correct.
+    const report = { simulation: true, agentId: Number(agentId), round: Number(round.id), validator: v.name, score, scenario };
+    const reportHash = keccak256(toUtf8Bytes(JSON.stringify(report)));
+    const rc = await (await (quorum.connect(signers[v.slug]) as Contract)
+      .submit(agentId, round.id, score, reportHash)).wait();
+    txCount++;
+    traceBus.push({ type: 'chain', from: v.name, to: CHAIN, lane,
+      summary: `${v.name}: ${score >= 60 ? 'APPROVE' : 'REJECT'} (${score}/100) — signed on-chain vote`,
+      payload: { ...report, address: signers[v.slug].address, reportHash, txHash: rc.hash } });
+  }
+  const result = await validationState(agentId);
+  traceBus.push({ type: result.eligible ? 'chain' : 'error', from: CHAIN, to: 'Orchestrator Agent', lane,
+    summary: `${result.approvals}/3 approvals — ${result.eligible ? 'eligible' : 'delegation blocked'}${scenario === 'collusion' ? ' (false approval: trusted majority colluded)' : ''}`,
+    payload: result });
+  return result;
+}
 
 const artifact = (name: string): { abi: import('ethers').InterfaceAbi; bytecode: string } =>
   JSON.parse(readFileSync(path.join(appRoot, `artifacts/contracts/${name}.sol/${name}.json`), 'utf8'));
@@ -148,7 +208,8 @@ async function bootEvm(): Promise<Deployed> {
   };
 
   const usdc = await deploy('SimUSDC', USDC(1000));
-  const registry = await deploy('AgentRegistry8004', signers.validator.address);
+  const quorum = await deploy('ValidatorQuorum', VALIDATORS.map((v) => signers[v.slug].address));
+  const registry = new Contract(await quorum.registry(), artifact('AgentRegistry8004').abi, deployer);
   const escrow = await deploy('Escrow8183', await usdc.getAddress());
   const wallet = await deploy('PolicyWallet', await usdc.getAddress(), USDC(0.5), USDC(5));
   await (await usdc.transfer(await wallet.getAddress(), USDC(100))).wait();
@@ -156,6 +217,7 @@ async function bootEvm(): Promise<Deployed> {
   const addresses = {
     usdc: await usdc.getAddress(),
     registry: await registry.getAddress(),
+    quorum: await quorum.getAddress(),
     escrow: await escrow.getAddress(),
     wallet: await wallet.getAddress(),
   };
@@ -164,7 +226,7 @@ async function bootEvm(): Promise<Deployed> {
   console.log(`  ⛓             Escrow8183 ${addresses.escrow}`);
   console.log(`  ⛓             PolicyWallet ${addresses.wallet} (100 USDC funded)`);
 
-  return { provider, signers, usdc, registry, escrow, wallet, addresses };
+  return { provider, signers, usdc, registry, quorum, escrow, wallet, addresses };
 }
 
 export function startChain(): Promise<void> {
@@ -182,12 +244,12 @@ export function startChain(): Promise<void> {
       }
       balances['escrow:pool'] = fromUSDC(await usdc.balanceOf(addresses.escrow));
 
-      const validations: Record<string, { score: number; validator: string }> = {};
+      const validations: Record<string, Awaited<ReturnType<typeof validationState>>> = {};
       const identity = [];
       for (const a of registeredAgents) {
-        const [, agentId, owner, , , score] = await registry.byIdentifier(a.identifier);
+        const [, agentId, owner] = await registry.byIdentifier(a.identifier);
         identity.push({ agentId: Number(agentId), identifier: a.identifier, name: a.name, wallet: owner });
-        validations[a.identifier] = { score: Number(score), validator: signers.validator.address };
+        validations[a.identifier] = await validationState(agentId);
       }
 
       const escrows = [];
@@ -213,6 +275,8 @@ export function startChain(): Promise<void> {
         },
         identity,
         validations,
+        trustPolicy: { threshold: 2, members: 3, minScore: 60, lifetimeSeconds: 3600,
+          selectedBy: signers.orchestrator.address, scenarios: SCENARIOS },
         escrows,
         txCount,
         contracts: addresses,
@@ -246,9 +310,7 @@ export function startChain(): Promise<void> {
         })
         .find((e: { name: string } | null) => e?.name === 'AgentRegistered');
       const agentId = Number(event.args.agentId);
-      const vtx = await (registry.connect(signers.validator) as Contract).setValidation(agentId, Number(score ?? 90));
-      await vtx.wait();
-      txCount++;
+      await runValidation(agentId, [Number(score ?? 90), Number(score ?? 90), Number(score ?? 90)], 'bootstrap', 'chain:boot');
       registeredAgents.push({ identifier, name, slug, agentId });
       traceBus.push({
         type: 'chain',
@@ -267,7 +329,7 @@ export function startChain(): Promise<void> {
   app.get('/registry', async (req, res) => {
     try {
       const identifier = String(req.query.id ?? '');
-      const [registered, agentId, owner, domain, cardUrl, score] = await evm!.registry.byIdentifier(identifier);
+      const [registered, agentId, owner, domain, cardUrl] = await evm!.registry.byIdentifier(identifier);
       if (!registered) {
         res.json({ registered: false });
         return;
@@ -278,7 +340,7 @@ export function startChain(): Promise<void> {
         wallet: owner,
         domain,
         cardUrl,
-        validation: { score: Number(score) },
+        validation: await validationState(agentId),
       });
     } catch (e) {
       res.status(500).json({ error: revertReason(e) });
@@ -286,29 +348,33 @@ export function startChain(): Promise<void> {
   });
 
   app.post('/admin/validation', async (req, res) => {
+    if (validationBusy) {
+      res.status(409).json({ error: 'a validation round is already running' });
+      return;
+    }
+    validationBusy = true;
     try {
       const identifier = String(req.body?.identifier ?? '');
-      const score = Math.max(0, Math.min(100, Number(req.body?.score ?? 0)));
-      const { registry, signers } = evm!;
+      const scenario = req.body?.scenario;
+      const score = req.body?.score;
+      if (scenario !== undefined ? typeof scenario !== 'string' || !Object.hasOwn(SCENARIOS, scenario)
+        : !Number.isInteger(score) || score < 0 || score > 100) {
+        res.status(400).json({ error: 'choose a known scenario or an integer score from 0 to 100' });
+        return;
+      }
+      const { registry } = evm!;
       const [registered, agentId] = await registry.byIdentifier(identifier);
       if (!registered) {
         res.status(404).json({ error: 'unknown identifier' });
         return;
       }
-      const tx = await (registry.connect(signers.validator) as Contract).setValidation(agentId, score);
-      const rc = await tx.wait();
-      txCount++;
-      traceBus.push({
-        type: 'chain',
-        from: 'User',
-        to: CHAIN,
-        lane: 'user:admin',
-        summary: `validation score set on-chain — ${identifier.split(':').pop()} → ${score} (tx ${rc.hash.slice(0, 10)}…)`,
-        payload: { identifier, score, txHash: rc.hash },
-      });
-      res.json({ identifier, score });
+      const result = await runValidation(agentId, scenario ? SCENARIOS[scenario].scores : [score, score, score],
+        scenario ?? 'manual unanimous scores', 'user:admin');
+      res.json({ identifier, ...result });
     } catch (e) {
       res.status(500).json({ error: revertReason(e) });
+    } finally {
+      validationBusy = false;
     }
   });
 

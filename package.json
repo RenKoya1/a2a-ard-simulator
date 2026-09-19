@@ -9,6 +9,7 @@
     "dev": "tsx watch src/main.ts",
     "typecheck": "tsc --noEmit",
     "test:contracts": "hardhat test",
+    "test:validators": "tsx test/validatorScenarios.ts",
     "chain:compile": "hardhat compile",
     "ui:dev": "npm --prefix web run dev",
     "ui:build": "npm --prefix web run build",

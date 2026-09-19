@@ -18,8 +18,7 @@ const seeds = agents.map((a) => ({ port: a.port, name: a.name }));
 await startRegistry(seeds);
 // ARD publishing→crawling phase: index every agent's ai-catalog.json.
 await crawlCatalogs(seeds);
-// ERC-8004 phase: each agent registers its identity on the mock chain and a
-// simulated validator seeds its validation score.
+// Each agent registers on the local EVM; three simulated operators seed a quorum.
 for (const a of agents) {
   await fetch(`${chainUrl()}/admin/register`, {
     method: 'POST',
